@@ -13,9 +13,11 @@ const tiles = [
 function gymPreview(plan: GymPlan | null): string {
   if (!plan) return "Loading…";
   const day = plan.days[plan.nextDayIndex];
-  const first = day.exercises[0];
+  const today = day.exercises.filter((ex) => ex.active);
+  if (today.length === 0) return `Next: ${day.name} — no exercises picked`;
+  const first = today[0];
   return `Next: ${day.name} — ${first.name} ${first.weight}kg × ${first.reps}`;
-} 
+}
 
 function App() {
   const [openTile, setOpenTile] = useState<string | null>(null);
