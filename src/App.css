@@ -86,7 +86,7 @@ body {
 
 .exercise {
   display: grid;
-  grid-template-columns: 1fr auto 5rem auto auto;
+  grid-template-columns: 1fr auto 5rem auto auto auto;
   gap: 0.75rem;
   align-items: center;
   background: var(--tile-bg);
@@ -195,4 +195,14 @@ body {
   padding: 0.5rem 1rem;
   cursor: pointer;
   font: inherit;
+}
+
+.reorder {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.move:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
