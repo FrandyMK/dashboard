@@ -137,6 +137,18 @@ async function writePlan(db: Database, plan: GymPlan): Promise<void> {
         [ex.id, day.id, ex.name, ex.weight, ex.sets, ex.reps, exPos, ex.active ? 1 : 0]
       );
     }
+
+    // Remove exercises that are in the database but no longer in the plan.
+    const ids = day.exercises.map((ex) => ex.id);
+    if (ids.length === 0) {
+      await db.execute("DELETE FROM exercises WHERE day_id = $1", [day.id]);
+    } else {
+      const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
+      await db.execute(
+        `DELETE FROM exercises WHERE day_id = $1 AND id NOT IN (${placeholders})`,
+        [day.id, ...ids]
+      );
+    }
   }
   await db.execute(
     `INSERT INTO settings (key, value) VALUES ('next_day_index', $1)

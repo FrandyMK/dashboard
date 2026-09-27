@@ -7,6 +7,7 @@ type Props = {
 };
 
 export default function GymView({ plan, onSave }: Props) {
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [draft, setDraft] = useState<GymPlan>(plan);
   const [newName, setNewName] = useState("");
 
@@ -28,6 +29,18 @@ export default function GymView({ plan, onSave }: Props) {
             }
       ),
     });
+  }
+
+  function deleteExercise(id: string) {
+    setDraft({
+      ...draft,
+      days: draft.days.map((d, i) =>
+        i !== draft.nextDayIndex
+          ? d
+          : { ...d, exercises: d.exercises.filter((ex) => ex.id !== id) }
+      ),
+    });
+    setConfirmDelete(null);
   }
 
   function addExercise() {
@@ -108,6 +121,7 @@ export default function GymView({ plan, onSave }: Props) {
         <span />
         <span />
         <span />
+        <span />
       </li>
     );
   }
@@ -147,6 +161,20 @@ export default function GymView({ plan, onSave }: Props) {
         >
           {ex.active ? "−" : "+"}
         </button>
+        {ex.active ? (
+          <span />
+        ) : (
+          <button
+            className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
+            title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
+            onClick={() =>
+              confirmDelete === ex.id ? deleteExercise(ex.id) : setConfirmDelete(ex.id)
+            }
+            onMouseLeave={() => setConfirmDelete(null)}
+          >
+          {confirmDelete === ex.id ? "✓" : "✕"}
+        </button>
+      )}
       </li>
     );
   }
