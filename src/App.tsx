@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import { getGymPlan, saveGymPlan, type GymPlan } from "./data";
+import { getGymPlan, type GymPlan } from "./data";
 import GymView from "./GymView";
 
 const tiles = [
@@ -22,9 +22,15 @@ function gymPreview(plan: GymPlan | null): string {
 function App() {
   const [openTile, setOpenTile] = useState<string | null>(null);
   const [gymPlan, setGymPlan] = useState<GymPlan | null>(null);
+  const [gymError, setGymError] = useState(false);
 
   useEffect(() => {
-    getGymPlan().then(setGymPlan).catch(console.error);
+    getGymPlan()
+      .then(setGymPlan)
+      .catch((err) => {
+        console.error(err);
+        setGymError(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -38,11 +44,6 @@ function App() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [openTile]);
 
-  async function handleGymSave(updated: GymPlan) {
-    await saveGymPlan(updated);
-    setGymPlan(updated);
-  }
-
   if (openTile) {
     const tile = tiles.find((t) => t.id === openTile)!;
     return (
@@ -52,7 +53,8 @@ function App() {
         </button>
         <h1>{tile.title}</h1>
         {openTile === "gym" && gymPlan ? (
-          <GymView plan={gymPlan} onSave={handleGymSave} />
+          <GymView plan={gymPlan} onChange={setGymPlan} />
+
         ) : (
           <p>This is where the {tile.title} app will live.</p>
         )}
@@ -69,7 +71,13 @@ function App() {
           onClick={() => setOpenTile(tile.id)}
         >
           <h2>{tile.title}</h2>
-          <p>{tile.id === "gym" ? gymPreview(gymPlan) : tile.preview}</p>
+          <p>
+            {tile.id === "gym"
+              ? gymError
+                ? "Can't reach the server"
+                : gymPreview(gymPlan)
+              : tile.preview}
+          </p>
         </button>
       ))}
     </main>

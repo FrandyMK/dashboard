@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -26,3 +26,20 @@ class WorkoutDay(CamelModel):
 class GymPlan(CamelModel):
     days: list[WorkoutDay]
     next_day_index: int
+
+
+class ExerciseUpdate(CamelModel):
+    # Every field is optional: send only what you're changing.
+    name: str | None = Field(default=None, min_length=1)
+    weight: float | None = Field(default=None, ge=0)
+    sets: int | None = Field(default=None, ge=1)
+    reps: int | None = Field(default=None, ge=1)
+    active: bool | None = None
+
+
+class NewExercise(CamelModel):
+    name: str = Field(min_length=1)
+
+
+class ExerciseOrder(CamelModel):
+    exercise_ids: list[str]

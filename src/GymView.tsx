@@ -1,124 +1,108 @@
 import { useState } from "react";
-import type { Exercise, GymPlan } from "./data";
+import {
+  addExercise,
+  completeWorkout,
+  reorderExercises,
+  updateExercise,
+  type Exercise,
+  type ExerciseChanges,
+  type GymPlan,
+} from "./data";
 
 type Props = {
   plan: GymPlan;
-  onSave: (plan: GymPlan) => void;
+  onChange: (plan: GymPlan) => void;
 };
 
-export default function GymView({ plan, onSave }: Props) {
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [draft, setDraft] = useState<GymPlan>(plan);
-  const [newName, setNewName] = useState("");
+// A number input that only saves when you're done typing (Enter or
+// clicking away), so typing "82.5" doesn't send four requests.
+function NumberField({
+  value,
+  step,
+  onCommit,
+}: {
+  value: number;
+  step: number;
+  onCommit: (n: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
 
-  const day = draft.days[draft.nextDayIndex];
+  function commit() {
+    setEditing(false);
+    const n = Number(text);
+    if (text.trim() === "" || Number.isNaN(n) || n === value) return;
+    onCommit(n);
+  }
+
+  return (
+    <input
+      type="number"
+      min={0}
+      step={step}
+      value={editing ? text : String(value)}
+      onFocus={() => {
+        setText(String(value));
+        setEditing(true);
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
+  );
+}
+
+export default function GymView({ plan, onChange }: Props) {
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const day = plan.days[plan.nextDayIndex];
   const inWorkout = day.exercises.filter((ex) => ex.active);
   const available = day.exercises.filter((ex) => !ex.active);
 
-  function updateExercise(id: string, changes: Partial<Exercise>) {
-    setDraft({
-      ...draft,
-      days: draft.days.map((d, i) =>
-        i !== draft.nextDayIndex
-          ? d
-          : {
-              ...d,
-              exercises: d.exercises.map((ex) =>
-                ex.id === id ? { ...ex, ...changes } : ex
-              ),
-            }
-      ),
-    });
+  // Every change goes to the server; its answer becomes the new plan.
+  async function run(action: () => Promise<GymPlan>) {
+    try {
+      onChange(await action());
+      setError(null);
+    } catch (err) {
+      setError(String(err));
+    }
   }
 
-  function deleteExercise(id: string) {
-    setDraft({
-      ...draft,
-      days: draft.days.map((d, i) =>
-        i !== draft.nextDayIndex
-          ? d
-          : { ...d, exercises: d.exercises.filter((ex) => ex.id !== id) }
-      ),
-    });
-    setConfirmDelete(null);
+  function update(ex: Exercise, changes: ExerciseChanges) {
+    run(() => updateExercise(day.id, ex.id, changes));
   }
 
-  function addExercise() {
+  function add() {
     const name = newName.trim();
     if (!name) return;
-    const exercise: Exercise = {
-      id: crypto.randomUUID(),
-      name,
-      weight: 0,
-      sets: 3,
-      reps: 8,
-      active: false,
-    };
-    setDraft({
-      ...draft,
-      days: draft.days.map((d, i) =>
-        i !== draft.nextDayIndex
-          ? d
-          : { ...d, exercises: [...d.exercises, exercise] }
-      ),
-    });
     setNewName("");
+    run(() => addExercise(day.id, name));
   }
 
-  function moveExercise(id: string, direction: -1 | 1) {
-    setDraft({
-      ...draft,
-      days: draft.days.map((d, i) => {
-        if (i !== draft.nextDayIndex) return d;
-        const list = [...d.exercises];
-        const from = list.findIndex((ex) => ex.id === id);
-        const active = list[from].active;
+  function move(id: string, direction: -1 | 1) {
+    const list = [...day.exercises];
+    const from = list.findIndex((ex) => ex.id === id);
+    const active = list[from].active;
 
-        let to = from + direction;
-        while (to >= 0 && to < list.length && list[to].active !== active) {
-          to += direction;
-        }
-        if (to < 0 || to >= list.length) return d;
+    let to = from + direction;
+    while (to >= 0 && to < list.length && list[to].active !== active) {
+      to += direction;
+    }
+    if (to < 0 || to >= list.length) return;
 
-        [list[from], list[to]] = [list[to], list[from]];
-        return { ...d, exercises: list };
-      }),
-    });
-  }
-
-  function completeWorkout() {
-    const next = {
-      ...draft,
-      nextDayIndex: (draft.nextDayIndex + 1) % draft.days.length,
-    };
-    setDraft(next);
-    onSave(next);
-  }
-
-  function numberInput(
-    value: number,
-    step: number,
-    onChange: (n: number) => void
-  ) {
-    return (
-      <input
-        type="number"
-        min={0}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    );
+    [list[from], list[to]] = [list[to], list[from]];
+    run(() => reorderExercises(day.id, list.map((ex) => ex.id)));
   }
 
   function headerRow() {
     return (
       <li className="exercise exercise-header">
         <span>Exercise</span>
-        <span title="Sets">Sets</span>
-        <span title="Reps">Reps</span>
+        <span>Sets</span>
+        <span>Reps</span>
         <span>Weight</span>
-        <span />
         <span />
         <span />
         <span />
@@ -130,18 +114,20 @@ export default function GymView({ plan, onSave }: Props) {
     return (
       <li key={ex.id} className={ex.active ? "exercise" : "exercise available"}>
         <span>{ex.name}</span>
-        {numberInput(ex.sets, 1, (sets) => updateExercise(ex.id, { sets }))}
-        {numberInput(ex.reps, 1, (reps) => updateExercise(ex.id, { reps }))}
-        {numberInput(ex.weight, 2.5, (weight) =>
-          updateExercise(ex.id, { weight })
-        )}
+        <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
+        <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
+        <NumberField
+          value={ex.weight}
+          step={2.5}
+          onCommit={(weight) => update(ex, { weight })}
+        />
         <span>kg</span>
         <span className="reorder">
           <button
             className="move"
             title="Move up"
             disabled={index === 0}
-            onClick={() => moveExercise(ex.id, -1)}
+            onClick={() => move(ex.id, -1)}
           >
             ▲
           </button>
@@ -149,7 +135,7 @@ export default function GymView({ plan, onSave }: Props) {
             className="move"
             title="Move down"
             disabled={index === total - 1}
-            onClick={() => moveExercise(ex.id, 1)}
+            onClick={() => move(ex.id, 1)}
           >
             ▼
           </button>
@@ -157,24 +143,10 @@ export default function GymView({ plan, onSave }: Props) {
         <button
           className="move"
           title={ex.active ? "Remove from today" : "Add to today"}
-          onClick={() => updateExercise(ex.id, { active: !ex.active })}
+          onClick={() => update(ex, { active: !ex.active })}
         >
           {ex.active ? "−" : "+"}
         </button>
-        {ex.active ? (
-          <span />
-        ) : (
-          <button
-            className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
-            title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
-            onClick={() =>
-              confirmDelete === ex.id ? deleteExercise(ex.id) : setConfirmDelete(ex.id)
-            }
-            onMouseLeave={() => setConfirmDelete(null)}
-          >
-          {confirmDelete === ex.id ? "✓" : "✕"}
-        </button>
-      )}
       </li>
     );
   }
@@ -182,6 +154,7 @@ export default function GymView({ plan, onSave }: Props) {
   return (
     <div className="gym">
       <h2>{day.name}</h2>
+      {error && <p className="error">{error}</p>}
 
       <h3 className="section-title">Today's workout</h3>
       {inWorkout.length === 0 ? (
@@ -206,14 +179,13 @@ export default function GymView({ plan, onSave }: Props) {
           placeholder="New exercise name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addExercise()}
+          onKeyDown={(e) => e.key === "Enter" && add()}
         />
-        <button onClick={addExercise}>+ Add to list</button>
+        <button onClick={add}>+ Add to list</button>
       </div>
 
       <div className="gym-actions">
-        <button onClick={() => onSave(draft)}>Save</button>
-        <button onClick={completeWorkout}>Complete workout →</button>
+        <button onClick={() => run(completeWorkout)}>Complete workout →</button>
       </div>
     </div>
   );
