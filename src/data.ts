@@ -20,7 +20,7 @@ export type GymPlan = {
 
 export type ExerciseChanges = Partial<Omit<Exercise, "id">>;
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 async function request(path: string, options: RequestInit = {}): Promise<GymPlan> {
   const response = await fetch(`${API_URL}${path}`, {

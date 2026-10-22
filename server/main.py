@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 from db import (
     add_exercise,
@@ -77,3 +79,9 @@ def post_complete() -> GymPlan:
     with connect() as conn:
         complete_workout(conn)
         return load_plan(conn)
+
+# Serve the built frontend, if present (it is inside Docker, not in local dev).
+# Must come last: API routes above take priority over this catch-all.
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

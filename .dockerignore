@@ -1,0 +1,11 @@
+.git/
+node_modules/
+dist/
+src-tauri/
+.env
+server/.venv/
+server/__pycache__/
+server/data/
+server/static/
+server/*.db
+server/.env
