@@ -236,3 +236,88 @@ body {
   color: #f7768e;
   font-size: 0.9rem;
 }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field-label {
+  display: none;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 640px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .expanded {
+    padding: 1rem;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .exercise-header,
+  .exercise .unit {
+    display: none;
+  }
+
+  .exercise {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas:
+      "name  name  name"
+      "sets  reps  weight"
+      "order order toggle";
+    padding: 1rem;
+  }
+
+  .ex-name {
+    grid-area: name;
+    font-weight: 600;
+  }
+  .field-sets {
+    grid-area: sets;
+  }
+  .field-reps {
+    grid-area: reps;
+  }
+  .field-weight {
+    grid-area: weight;
+  }
+  .reorder {
+    grid-area: order;
+  }
+  .toggle {
+    grid-area: toggle;
+    justify-self: end;
+  }
+
+  .field-label {
+    display: block;
+  }
+
+  .exercise input {
+    font-size: 16px;
+    padding: 0.6rem;
+  }
+
+  .move {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .add-exercise {
+    flex-direction: column;
+  }
+
+  .gym-actions button {
+    flex: 1;
+    padding: 0.9rem;
+  }
+}

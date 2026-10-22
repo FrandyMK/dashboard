@@ -38,6 +38,7 @@ function NumberField({
   return (
     <input
       type="number"
+      inputMode="decimal"
       min={0}
       step={step}
       value={editing ? text : String(value)}
@@ -113,15 +114,24 @@ export default function GymView({ plan, onChange }: Props) {
   function exerciseRow(ex: Exercise, index: number, total: number) {
     return (
       <li key={ex.id} className={ex.active ? "exercise" : "exercise available"}>
-        <span>{ex.name}</span>
-        <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
-        <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
-        <NumberField
-          value={ex.weight}
-          step={2.5}
-          onCommit={(weight) => update(ex, { weight })}
-        />
-        <span>kg</span>
+        <span className="ex-name">{ex.name}</span>
+        <label className="field field-sets">
+          <span className="field-label">Sets</span>
+          <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
+        </label>
+        <label className="field field-reps">
+          <span className="field-label">Reps</span>
+          <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
+        </label>
+        <label className="field field-weight">
+          <span className="field-label">Weight (kg)</span>
+          <NumberField
+            value={ex.weight}
+            step={2.5}
+            onCommit={(weight) => update(ex, { weight })}
+          />
+        </label>
+        <span className="unit">kg</span>
         <span className="reorder">
           <button
             className="move"
@@ -141,7 +151,7 @@ export default function GymView({ plan, onChange }: Props) {
           </button>
         </span>
         <button
-          className="move"
+          className="move toggle"
           title={ex.active ? "Remove from today" : "Add to today"}
           onClick={() => update(ex, { active: !ex.active })}
         >
