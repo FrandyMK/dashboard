@@ -25,12 +25,32 @@ function App() {
   const [gymError, setGymError] = useState(false);
 
   useEffect(() => {
-    getGymPlan()
-      .then(setGymPlan)
-      .catch((err) => {
-        console.error(err);
-        setGymError(true);
-      });
+    function refresh() {
+      getGymPlan()
+        .then((plan) => {
+          setGymPlan(plan);
+          setGymError(false);
+        })
+        .catch((err) => {
+          console.error(err);
+          setGymError(true);
+        });
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") refresh();
+    }
+
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    const interval = setInterval(refresh, 60_000);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
