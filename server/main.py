@@ -8,6 +8,7 @@ from db import (
     add_exercise,
     complete_workout,
     connect,
+    delete_exercise,
     init_db,
     load_plan,
     reorder_exercises,
@@ -51,6 +52,14 @@ def patch_exercise(day_id: str, exercise_id: str, update: ExerciseUpdate) -> Gym
     with connect() as conn:
         changes = update.model_dump(exclude_none=True)
         if not update_exercise(conn, day_id, exercise_id, changes):
+            raise HTTPException(status_code=404, detail="Exercise not found")
+        return load_plan(conn)
+
+
+@app.delete("/gym/days/{day_id}/exercises/{exercise_id}")
+def remove_exercise(day_id: str, exercise_id: str) -> GymPlan:
+    with connect() as conn:
+        if not delete_exercise(conn, day_id, exercise_id):
             raise HTTPException(status_code=404, detail="Exercise not found")
         return load_plan(conn)
 

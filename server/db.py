@@ -168,6 +168,14 @@ def add_exercise(conn, day_id: str, name: str) -> bool:
     return True
 
 
+def delete_exercise(conn, day_id: str, exercise_id: str) -> bool:
+    cursor = conn.execute(
+        "DELETE FROM exercises WHERE day_id = ? AND id = ?",
+        (day_id, exercise_id),
+    )
+    return cursor.rowcount == 1
+
+
 def reorder_exercises(conn, day_id: str, exercise_ids: list[str]) -> bool:
     existing = {
         row["id"]

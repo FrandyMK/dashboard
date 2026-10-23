@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   addExercise,
   completeWorkout,
+  deleteExercise,
   reorderExercises,
   updateExercise,
   type Exercise,
@@ -56,6 +57,8 @@ function NumberField({
 export default function GymView({ plan, onChange }: Props) {
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Deleting takes two clicks: the first arms the button, the second deletes.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const day = plan.days[plan.nextDayIndex];
   const inWorkout = day.exercises.filter((ex) => ex.active);
@@ -82,6 +85,11 @@ export default function GymView({ plan, onChange }: Props) {
     run(() => addExercise(day.id, name));
   }
 
+  function remove(id: string) {
+    setConfirmDelete(null);
+    run(() => deleteExercise(day.id, id));
+  }
+
   function move(id: string, direction: -1 | 1) {
     const list = [...day.exercises];
     const from = list.findIndex((ex) => ex.id === id);
@@ -104,6 +112,7 @@ export default function GymView({ plan, onChange }: Props) {
         <span>Sets</span>
         <span>Reps</span>
         <span>Weight</span>
+        <span />
         <span />
         <span />
         <span />
@@ -157,6 +166,21 @@ export default function GymView({ plan, onChange }: Props) {
         >
           {ex.active ? "−" : "+"}
         </button>
+        {ex.active ? (
+          <span />
+        ) : (
+          <button
+            className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
+            title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
+            onClick={() =>
+              confirmDelete === ex.id ? remove(ex.id) : setConfirmDelete(ex.id)
+            }
+            onMouseLeave={() => setConfirmDelete(null)}
+            onBlur={() => setConfirmDelete(null)}
+          >
+            {confirmDelete === ex.id ? "✓" : "✕"}
+          </button>
+        )}
       </li>
     );
   }

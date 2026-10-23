@@ -273,7 +273,7 @@ body {
     grid-template-areas:
       "name  name  name"
       "sets  reps  weight"
-      "order order toggle";
+      "order delete toggle";
     padding: 1rem;
   }
 
@@ -295,6 +295,10 @@ body {
   }
   .toggle {
     grid-area: toggle;
+    justify-self: end;
+  }
+  .delete {
+    grid-area: delete;
     justify-self: end;
   }
 
