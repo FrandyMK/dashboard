@@ -22,7 +22,22 @@ export type ExerciseChanges = Partial<Omit<Exercise, "id">>;
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// Changes are sent one at a time: each waits until the previous change has its
+// answer. So answers to changes arrive in the order the changes were made, and
+// an answer built before a later change can never land on top of it.
+let previousChange: Promise<unknown> = Promise.resolve();
+
+function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!options.method || options.method === "GET") {
+    return send<T>(path, options);
+  }
+  const result = previousChange.then(() => send<T>(path, options));
+  // A failed change shouldn't block the ones after it.
+  previousChange = result.catch(() => {});
+  return result;
+}
+
+async function send<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options.headers },

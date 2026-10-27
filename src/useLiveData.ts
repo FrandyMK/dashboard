@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type LiveData<T> = {
   data: T | null;
   error: boolean;
+  // For data the server just sent back after a change.
   setData: (data: T) => void;
 };
 
@@ -11,17 +12,25 @@ export type LiveData<T> = {
 // `load` must be defined outside any component, so it's the same function
 // on every render. Otherwise the effect would re-run on every render.
 export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setDataState] = useState<T | null>(null);
   const [error, setError] = useState(false);
+
+  // Goes up by one every time a refresh starts or new data arrives from a change.
+  // A refresh only gets to show its answer if nothing newer has happened since it
+  // started; otherwise its answer may be older than what's on screen.
+  const latest = useRef(0);
 
   useEffect(() => {
     function refresh() {
+      const mine = ++latest.current;
       load()
         .then((result) => {
-          setData(result);
+          if (mine !== latest.current) return;
+          setDataState(result);
           setError(false);
         })
         .catch((err) => {
+          if (mine !== latest.current) return;
           console.error(err);
           setError(true);
         });
@@ -42,6 +51,12 @@ export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
       clearInterval(interval);
     };
   }, [load]);
+
+  function setData(next: T) {
+    latest.current++;
+    setDataState(next);
+    setError(false);
+  }
 
   return { data, error, setData };
 }
