@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from models import Exercise, FinanceMonth, GymPlan, MonthBill, Payment, WorkoutDay
@@ -268,3 +269,38 @@ def add_bill(conn, name: str, amount_cents: int, due_day: int) -> None:
            VALUES (?, ?, ?, ?, ?, 1)""",
         (uuid4().hex, name, amount_cents, due_day, next_position),
     )
+
+
+def mark_paid(conn, bill_id: str, period: str) -> bool:
+    bill = conn.execute(
+        "SELECT amount_cents FROM bills WHERE id = ?", (bill_id,)
+    ).fetchone()
+    if bill is None:
+        return False
+
+    # Already paid? Then keep the existing payment as it is.
+    conn.execute(
+        """INSERT INTO payments (bill_id, period, amount_cents, paid_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT (bill_id, period) DO NOTHING""",
+        (
+            bill_id,
+            period,
+            bill["amount_cents"],
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        ),
+    )
+    return True
+
+
+def mark_unpaid(conn, bill_id: str, period: str) -> bool:
+    bill = conn.execute("SELECT 1 FROM bills WHERE id = ?", (bill_id,)).fetchone()
+    if bill is None:
+        return False
+
+    # Deleting a payment that doesn't exist is fine: it's already unpaid.
+    conn.execute(
+        "DELETE FROM payments WHERE bill_id = ? AND period = ?",
+        (bill_id, period),
+    )
+    return True

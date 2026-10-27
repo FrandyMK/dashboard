@@ -15,6 +15,8 @@ from db import (
     init_db,
     load_month,
     load_plan,
+    mark_paid,
+    mark_unpaid,
     reorder_exercises,
     update_exercise,
 )
@@ -119,6 +121,22 @@ def get_finance_month(period: PeriodInPath) -> FinanceMonth:
 def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
     with connect() as conn:
         add_bill(conn, new.name, new.amount_cents, new.due_day)
+        return load_month(conn, period)
+
+
+@app.put("/finance/months/{period}/payments/{bill_id}")
+def put_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
+    with connect() as conn:
+        if not mark_paid(conn, bill_id, period):
+            raise HTTPException(status_code=404, detail="Bill not found")
+        return load_month(conn, period)
+
+
+@app.delete("/finance/months/{period}/payments/{bill_id}")
+def delete_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
+    with connect() as conn:
+        if not mark_unpaid(conn, bill_id, period):
+            raise HTTPException(status_code=404, detail="Bill not found")
         return load_month(conn, period)
 
 
