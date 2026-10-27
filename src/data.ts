@@ -22,7 +22,7 @@ export type ExerciseChanges = Partial<Omit<Exercise, "id">>;
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
-async function request(path: string, options: RequestInit = {}): Promise<GymPlan> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options.headers },
@@ -36,7 +36,7 @@ async function request(path: string, options: RequestInit = {}): Promise<GymPlan
 const enc = encodeURIComponent;
 
 export function getGymPlan(): Promise<GymPlan> {
-  return request("/gym/plan");
+  return request<GymPlan>("/gym/plan");
 }
 
 export function updateExercise(
@@ -44,32 +44,101 @@ export function updateExercise(
   exerciseId: string,
   changes: ExerciseChanges
 ): Promise<GymPlan> {
-  return request(`/gym/days/${enc(dayId)}/exercises/${enc(exerciseId)}`, {
+  return request<GymPlan>(`/gym/days/${enc(dayId)}/exercises/${enc(exerciseId)}`, {
     method: "PATCH",
     body: JSON.stringify(changes),
   });
 }
 
 export function addExercise(dayId: string, name: string): Promise<GymPlan> {
-  return request(`/gym/days/${enc(dayId)}/exercises`, {
+  return request<GymPlan>(`/gym/days/${enc(dayId)}/exercises`, {
     method: "POST",
     body: JSON.stringify({ name }),
   });
 }
 
 export function deleteExercise(dayId: string, exerciseId: string): Promise<GymPlan> {
-  return request(`/gym/days/${enc(dayId)}/exercises/${enc(exerciseId)}`, {
+  return request<GymPlan>(`/gym/days/${enc(dayId)}/exercises/${enc(exerciseId)}`, {
     method: "DELETE",
   });
 }
 
 export function reorderExercises(dayId: string, exerciseIds: string[]): Promise<GymPlan> {
-  return request(`/gym/days/${enc(dayId)}/order`, {
+  return request<GymPlan>(`/gym/days/${enc(dayId)}/order`, {
     method: "PUT",
     body: JSON.stringify({ exerciseIds }),
   });
 }
 
 export function completeWorkout(): Promise<GymPlan> {
-  return request("/gym/complete", { method: "POST" });
+  return request<GymPlan>("/gym/complete", { method: "POST" });
+}
+
+// --- Finance ---
+
+export type Payment = {
+  amountCents: number;
+  paidAt: string;
+};
+
+export type MonthBill = {
+  id: string;
+  name: string;
+  amountCents: number;
+  dueDay: number;
+  active: boolean;
+  payment: Payment | null;
+};
+
+export type FinanceMonth = {
+  period: string;
+  bills: MonthBill[];
+};
+
+export type NewBill = {
+  name: string;
+  amountCents: number;
+  dueDay: number;
+};
+
+export type BillChanges = Partial<Omit<MonthBill, "id" | "payment">>;
+
+// The month this device is in right now, as "2026-11", in local time.
+export function currentPeriod(date: Date = new Date()): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${date.getFullYear()}-${month}`;
+}
+
+export function getFinanceMonth(period: string): Promise<FinanceMonth> {
+  return request<FinanceMonth>(`/finance/months/${enc(period)}`);
+}
+
+export function addBill(period: string, bill: NewBill): Promise<FinanceMonth> {
+  return request<FinanceMonth>(`/finance/bills?period=${enc(period)}`, {
+    method: "POST",
+    body: JSON.stringify(bill),
+  });
+}
+
+export function updateBill(
+  period: string,
+  billId: string,
+  changes: BillChanges
+): Promise<FinanceMonth> {
+  return request<FinanceMonth>(`/finance/bills/${enc(billId)}?period=${enc(period)}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+export function markPaid(period: string, billId: string): Promise<FinanceMonth> {
+  return request<FinanceMonth>(`/finance/months/${enc(period)}/payments/${enc(billId)}`, {
+    method: "PUT",
+  });
+}
+
+export function markUnpaid(period: string, billId: string): Promise<FinanceMonth> {
+  return request<FinanceMonth>(`/finance/months/${enc(period)}/payments/${enc(billId)}`, {
+    method: "DELETE",
+  });
 }
