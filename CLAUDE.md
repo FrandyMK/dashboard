@@ -138,7 +138,7 @@ dashboard/
 ### Deployment
 
 - **Dockerfile:** stage 1 `node:24-slim` runs `npm ci` and `npm run build`; stage 2 `python:3.12-slim` with uv `0.13.1` copies the server code and the built frontend into `./static`, then runs `fastapi run main.py --port 8000`.
-- **Compose:** `restart: unless-stopped`, volume `./data:/data`, port bound to the Tailscale address via `BIND_ADDRESS` in the homelab's `server/.env`. Homelab port **8010** maps to container port 8000.
+- **Compose:** `restart: unless-stopped`, volume `./data:/data`, ports `"${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"`. The homelab's `server/.env` (gitignored, machine-specific) sets `BIND_ADDRESS` to its Tailscale IP and `API_PORT=8010`; without a `.env` (e.g. on the PC) it falls back to `127.0.0.1:8000`. Nothing on the homelab is edited outside the repo, so `git pull` there stays clean.
 - **Updating the phone version or the API:** commit and push on the PC, then on the homelab: `cd ~/dashboard/server && git pull && docker compose up -d --build`.
 - **Updating the desktop app:** `npm run tauri build -- --no-bundle` on the PC, then restart the app. The binary is at `src-tauri/target/release/dashboard`.
 - Local development: `npm run tauri dev` for the frontend, and `uv run fastapi dev main.py` in `server/` for a local API on port 8000 (then point `.env` at localhost).
@@ -168,7 +168,6 @@ hl.window_rule({
 - No authentication on the API. Acceptable while only my own devices are on the tailnet; reconsider before sharing access with anyone.
 - The phone page needs a network connection. No offline support or proper PWA manifest yet.
 - Things I'm not 100% sure were completed, so worth checking:
-  - whether the compose port was made configurable (`${PORT:-8000}` with `PORT=8010` in the homelab `.env`) or edited directly on the homelab, which would block `git pull` there
   - whether the dashboard autostarts on login via `~/.config/hypr/autostart.lua`
   - whether a homelab reboot test passed. If the container fails to bind after reboot, the fix is `net.ipv4.ip_nonlocal_bind = 1` in `/etc/sysctl.d/`.
 
