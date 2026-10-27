@@ -20,3 +20,9 @@ export function parseEuros(text: string): number | null {
   const [, whole, fraction = ""] = match;
   return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
 }
+
+// Cents as text for an input field to start from: 95000 becomes "950,00".
+export function toEuroInput(cents: number): string {
+  const fraction = String(cents % 100).padStart(2, "0");
+  return `${Math.floor(cents / 100)},${fraction}`;
+}

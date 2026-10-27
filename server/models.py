@@ -65,9 +65,18 @@ class MonthBill(CamelModel):
     payment: Payment | None
 
 
+class Bill(CamelModel):
+    id: str
+    name: str
+    amount_cents: int
+    due_day: int
+
+
 class FinanceMonth(CamelModel):
     period: str
     bills: list[MonthBill]
+    # Every deactivated bill, so the client can offer to reactivate them.
+    inactive: list[Bill]
 
 
 class NewBill(CamelModel):

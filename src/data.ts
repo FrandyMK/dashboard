@@ -90,9 +90,17 @@ export type MonthBill = {
   payment: Payment | null;
 };
 
+export type Bill = {
+  id: string;
+  name: string;
+  amountCents: number;
+  dueDay: number;
+};
+
 export type FinanceMonth = {
   period: string;
   bills: MonthBill[];
+  inactive: Bill[];
 };
 
 export type NewBill = {

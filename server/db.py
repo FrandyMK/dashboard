@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from models import Exercise, FinanceMonth, GymPlan, MonthBill, Payment, WorkoutDay
+from models import Bill, Exercise, FinanceMonth, GymPlan, MonthBill, Payment, WorkoutDay
 
 DB_PATH = os.environ.get("DASHBOARD_DB", "dashboard.db")
 
@@ -239,6 +239,11 @@ def load_month(conn, period: str) -> FinanceMonth:
            ORDER BY b.due_day, b.position""",
         (period,),
     ).fetchall()
+    inactive = conn.execute(
+        """SELECT id, name, amount_cents, due_day FROM bills
+           WHERE active = 0
+           ORDER BY name COLLATE NOCASE"""
+    ).fetchall()
 
     return FinanceMonth(
         period=period,
@@ -256,6 +261,15 @@ def load_month(conn, period: str) -> FinanceMonth:
                 ),
             )
             for r in rows
+        ],
+        inactive=[
+            Bill(
+                id=r["id"],
+                name=r["name"],
+                amount_cents=r["amount_cents"],
+                due_day=r["due_day"],
+            )
+            for r in inactive
         ],
     )
 
