@@ -71,6 +71,7 @@ dashboard/
 │   ├── Dockerfile            Multi-stage: Node builds the frontend, Python serves it all
 │   ├── docker-compose.yml    Build context is the repo root (`..`)
 │   ├── pyproject.toml, uv.lock
+├── .claude/commands/handoff.md  `/handoff`: updates this file at the end of a session
 ├── .dockerignore             At repo root (because the build context is the root)
 ├── .env.example              VITE_API_URL=http://homelab1:8010
 └── README.md                 OUTDATED, see "Known issues"
@@ -80,7 +81,7 @@ dashboard/
 
 **`data.ts`**
 - `API_URL = import.meta.env.VITE_API_URL ?? ""`. Empty means same address the page came from (used by the phone version). The desktop sets it via a root `.env` to `http://homelab1:8010`, which is baked in at build time.
-- Exports types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`, and functions `getGymPlan`, `updateExercise`, `addExercise`, `reorderExercises`, `completeWorkout`. Each returns the full updated `GymPlan`.
+- Exports types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`, and functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `completeWorkout`. Each returns the full updated `GymPlan`.
 
 **`App.tsx`**
 - `tiles` array: `gym`, `todo`, `finance`, `habits`. The finance placeholder preview currently reads "Groceries: 50/250".
@@ -93,12 +94,13 @@ dashboard/
 - Receives `plan` and `onChange`. Every action calls the API through `run()`, and the server's response becomes the new state. No draft, no Save button.
 - `NumberField`: holds its own text while focused and only saves on blur or Enter, so typing doesn't send a request per keystroke and background refreshes can't overwrite what's being typed. Uses `inputMode="decimal"`.
 - Two sections: "Today's workout" (active exercises) and the full pool for that day. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−). New exercises can be added to the pool.
+- Exercises in the pool (not in today's workout) can be deleted with ✕. It takes two clicks: the first arms the button (red ✓), the second deletes. Moving the mouse away or tapping elsewhere disarms it (`confirmDelete` state, reset on `onMouseLeave` and `onBlur`).
 - "Complete workout" advances the push → pull → legs rotation.
 
 **`App.css`**
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
-- Exercise rows use a 7-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem`). Auto widths broke header alignment, because each row is its own grid.
-- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become cards via `grid-template-areas`, labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
+- Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid.
+- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become cards via `grid-template-areas` (bottom row: `order delete toggle`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
 
 ### Backend details
 
@@ -124,6 +126,7 @@ dashboard/
 | GET | `/gym/plan` | Full plan |
 | PATCH | `/gym/days/{day_id}/exercises/{exercise_id}` | Change any of name, weight, sets, reps, active |
 | POST | `/gym/days/{day_id}/exercises` | Add an exercise to the pool |
+| DELETE | `/gym/days/{day_id}/exercises/{exercise_id}` | Delete an exercise (404 if it doesn't exist) |
 | PUT | `/gym/days/{day_id}/order` | New order; must list every exercise of the day exactly once |
 | POST | `/gym/complete` | Advance to the next day |
 
@@ -197,3 +200,8 @@ Starting thoughts from the previous chat, to discuss rather than treat as decide
 ## Session log
 
 (newest first)
+
+**2026-10-27**
+- Brought this file up to date with the delete button (`7c30c86`, 2026-10-23), which was committed before these notes were written but missing from them.
+- Restored deleting exercises from the pool. It existed in the old local-SQLite version (`639f305`) but was lost in the move to the API (`3ff03e2`). Re-added as a `DELETE` endpoint, `deleteExercise()` in `data.ts`, and a two-click ✕ button. Only pool exercises can be deleted, so nothing in today's workout disappears by accident.
+- Renamed `claude.md` to `CLAUDE.md` so Claude Code loads it automatically, and added the `/handoff` command.
