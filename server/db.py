@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import contextmanager
 from uuid import uuid4
 
-from models import Exercise, GymPlan, WorkoutDay
+from models import Exercise, FinanceMonth, GymPlan, MonthBill, Payment, WorkoutDay
 
 DB_PATH = os.environ.get("DASHBOARD_DB", "dashboard.db")
 
@@ -27,6 +27,21 @@ CREATE TABLE IF NOT EXISTS exercises (
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    due_day INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS payments (
+    bill_id TEXT NOT NULL REFERENCES bills(id),
+    period TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    paid_at TEXT NOT NULL,
+    PRIMARY KEY (bill_id, period)
 );
 """
 
@@ -207,4 +222,49 @@ def complete_workout(conn) -> None:
         """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
         (str((current + 1) % day_count),),
+    )
+
+
+# --- Finance ---
+
+
+def load_month(conn, period: str) -> FinanceMonth:
+    rows = conn.execute(
+        """SELECT b.id, b.name, b.amount_cents, b.due_day, b.active,
+                  p.amount_cents AS paid_cents, p.paid_at
+           FROM bills b
+           LEFT JOIN payments p ON p.bill_id = b.id AND p.period = ?
+           WHERE b.active = 1 OR p.bill_id IS NOT NULL
+           ORDER BY b.position""",
+        (period,),
+    ).fetchall()
+
+    return FinanceMonth(
+        period=period,
+        bills=[
+            MonthBill(
+                id=r["id"],
+                name=r["name"],
+                amount_cents=r["amount_cents"],
+                due_day=r["due_day"],
+                active=bool(r["active"]),
+                payment=(
+                    Payment(amount_cents=r["paid_cents"], paid_at=r["paid_at"])
+                    if r["paid_at"] is not None
+                    else None
+                ),
+            )
+            for r in rows
+        ],
+    )
+
+
+def add_bill(conn, name: str, amount_cents: int, due_day: int) -> None:
+    next_position = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM bills"
+    ).fetchone()[0]
+    conn.execute(
+        """INSERT INTO bills (id, name, amount_cents, due_day, position, active)
+           VALUES (?, ?, ?, ?, ?, 1)""",
+        (uuid4().hex, name, amount_cents, due_day, next_position),
     )

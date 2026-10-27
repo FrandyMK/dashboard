@@ -1,20 +1,32 @@
 from contextlib import asynccontextmanager
+from typing import Annotated
+
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
 from db import (
+    add_bill,
     add_exercise,
     complete_workout,
     connect,
     delete_exercise,
     init_db,
+    load_month,
     load_plan,
     reorder_exercises,
     update_exercise,
 )
-from models import ExerciseOrder, ExerciseUpdate, GymPlan, NewExercise
+from models import (
+    PERIOD_PATTERN,
+    ExerciseOrder,
+    ExerciseUpdate,
+    FinanceMonth,
+    GymPlan,
+    NewBill,
+    NewExercise,
+)
 
 
 @asynccontextmanager
@@ -88,6 +100,27 @@ def post_complete() -> GymPlan:
     with connect() as conn:
         complete_workout(conn)
         return load_plan(conn)
+
+
+# --- Finance ---
+# Every finance response is the month the client is looking at,
+# so mutations take that month as ?period=2026-11.
+PeriodInPath = Annotated[str, PathParam(pattern=PERIOD_PATTERN)]
+PeriodInQuery = Annotated[str, Query(pattern=PERIOD_PATTERN)]
+
+
+@app.get("/finance/months/{period}")
+def get_finance_month(period: PeriodInPath) -> FinanceMonth:
+    with connect() as conn:
+        return load_month(conn, period)
+
+
+@app.post("/finance/bills")
+def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
+    with connect() as conn:
+        add_bill(conn, new.name, new.amount_cents, new.due_day)
+        return load_month(conn, period)
+
 
 # Serve the built frontend, if present (it is inside Docker, not in local dev).
 # Must come last: API routes above take priority over this catch-all.

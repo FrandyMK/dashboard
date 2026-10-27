@@ -43,3 +43,34 @@ class NewExercise(CamelModel):
 
 class ExerciseOrder(CamelModel):
     exercise_ids: list[str]
+
+
+# A month written as "2026-11". Used to validate the period in URLs.
+PERIOD_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+class Payment(CamelModel):
+    amount_cents: int
+    paid_at: str
+
+
+class MonthBill(CamelModel):
+    # A bill as seen in one particular month: the bill itself,
+    # plus that month's payment if there is one.
+    id: str
+    name: str
+    amount_cents: int
+    due_day: int
+    active: bool
+    payment: Payment | None
+
+
+class FinanceMonth(CamelModel):
+    period: str
+    bills: list[MonthBill]
+
+
+class NewBill(CamelModel):
+    name: str = Field(min_length=1)
+    amount_cents: int = Field(ge=0)
+    due_day: int = Field(ge=1, le=31)
