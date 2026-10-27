@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import "./App.css";
-import { getGymPlan } from "./data";
+import { getGymPlan, loadCurrentMonth } from "./data";
+import FinanceView, { financePreview } from "./FinanceView";
 import GymView, { gymPreview } from "./GymView";
 import { useLiveData, type LiveData } from "./useLiveData";
 
@@ -29,6 +30,7 @@ function viewOf<T>(source: LiveData<T>, render: (data: T) => ReactNode): ReactNo
 function App() {
   const [openTile, setOpenTile] = useState<string | null>(null);
   const gym = useLiveData(getGymPlan);
+  const finance = useLiveData(loadCurrentMonth);
 
   const tiles: Tile[] = [
     {
@@ -38,7 +40,13 @@ function App() {
       view: () => viewOf(gym, (plan) => <GymView plan={plan} onChange={gym.setData} />),
     },
     { id: "todo", title: "To-do", preview: "3 tasks left today" },
-    { id: "finance", title: "Finance", preview: "Groceries: 50/250" },
+    {
+      id: "finance",
+      title: "Finance",
+      preview: previewOf(finance, financePreview),
+      view: () =>
+        viewOf(finance, (month) => <FinanceView month={month} onChange={finance.setData} />),
+    },
     { id: "habits", title: "Habits", preview: "4 / 6 done today" },
   ];
 

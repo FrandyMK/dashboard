@@ -142,3 +142,9 @@ export function markUnpaid(period: string, billId: string): Promise<FinanceMonth
     method: "DELETE",
   });
 }
+
+// The finance tile's loader. It asks for the month the device is in at the
+// moment of each refresh, so on the 1st the tile moves to the new month by itself.
+export function loadCurrentMonth(): Promise<FinanceMonth> {
+  return getFinanceMonth(currentPeriod());
+}

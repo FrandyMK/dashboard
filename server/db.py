@@ -236,7 +236,7 @@ def load_month(conn, period: str) -> FinanceMonth:
            FROM bills b
            LEFT JOIN payments p ON p.bill_id = b.id AND p.period = ?
            WHERE b.active = 1 OR p.bill_id IS NOT NULL
-           ORDER BY b.position""",
+           ORDER BY b.due_day, b.position""",
         (period,),
     ).fetchall()
 
