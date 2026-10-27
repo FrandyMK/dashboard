@@ -85,6 +85,7 @@ dashboard/
 **`data.ts`**
 - `API_URL = import.meta.env.VITE_API_URL ?? ""`. Empty means same address the page came from (used by the phone version). The desktop sets it via a root `.env` to `http://homelab1:8010`, which is baked in at build time.
 - `request<T>()` is generic: each caller names the type it expects (`request<GymPlan>`, `request<FinanceMonth>`). This is a promise to the compiler only; nothing checks the response at runtime.
+- `request()` queues non-GET requests through `previousChange` so they're sent one at a time; `send()` does the actual fetch.
 - Gym: types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`; functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `completeWorkout`. Each returns the full updated `GymPlan`.
 - Finance: types `Payment`, `MonthBill`, `Bill`, `FinanceMonth`, `NewBill`, `BillChanges`; functions `getFinanceMonth`, `addBill`, `updateBill`, `markPaid`, `markUnpaid`. Each takes the `period` being viewed and returns that `FinanceMonth`.
 - `currentPeriod()` gives the device's current month as `"2026-11"` in **local** time. `loadCurrentMonth()` is the finance tile's loader and calls `currentPeriod()` on every refresh, so the tile rolls over to a new month by itself.
@@ -93,6 +94,7 @@ dashboard/
 - `useLiveData(load)` returns `{ data, error, setData }`. It refreshes on load, on window focus, on `visibilitychange` (for the phone) and every 60 seconds, with cleanup.
 - `load` must be a stable function defined outside any component (e.g. `getGymPlan`, `loadCurrentMonth`). An inline arrow would re-run the effect on every render and cause an endless request loop.
 - Stale-refresh guard: a `latest` counter (`useRef`) goes up when a refresh starts and when `setData` is called with a mutation's response. A refresh only applies its answer if nothing newer happened since it started, so a slow background refresh can't undo a change you just made. `setData` also clears the error flag, since the server just answered.
+- Out-of-order changes can't happen either: `request()` in `data.ts` sends changes (anything not GET) one at a time, each waiting for the previous answer. A failed change doesn't block the queue. The more general alternative, a server-side version number in every response, was considered and left for if it's ever needed.
 
 **`App.tsx`**
 - `Tile` type: `{ id, title, preview: string, view?: () => ReactNode }`. A tile without `view` is a placeholder. Each entry turns its own data into a preview string and a render function, so `App` deals with one plain shape whatever the data type.
@@ -204,8 +206,7 @@ hl.window_rule({
 ## Known issues and loose ends
 
 - **The README is outdated.** It still describes the local SQLite / `tauri-plugin-sql` version, the old draft-and-save flow, and lists "move the backend to a home server" as future work. It needs rewriting to cover the client-server architecture, the phone version, Docker deployment, backups, the finance tile and the design decisions above. High priority for the portfolio.
-- The stale-refresh guard covers refresh vs. mutation, but not two of *your own* mutations whose responses arrive out of order (e.g. two very fast taps). Rare on the tailnet; the next refresh corrects it. A one-at-a-time change queue in `request()` was tried and reverted; a server-side version number in every response is the more general option if it's ever needed.
-- `fetch` has no timeout, so with bad signal (the gym) a change can hang until the browser gives up. Fix when it matters: `signal: AbortSignal.timeout(10_000)` in `request()`. Relevant again for the offline/PWA work.
+- `fetch` has no timeout, and changes are queued one at a time. With bad signal (the gym), one hanging change blocks every change after it until the browser gives up. Fix when it matters: `signal: AbortSignal.timeout(10_000)` in `send()`. Relevant again for the offline/PWA work.
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
@@ -234,7 +235,7 @@ The README is the first thing anyone sees on GitHub, and it still describes the 
 - What the dashboard is, with screenshots of the grid, the gym tile and the finance tile (desktop and phone).
 - The architecture: one React codebase in two places (Tauri on the desktop, the browser on the phone), one FastAPI + SQLite server on the homelab over Tailscale, the server as the single source of truth.
 - How to run it locally and how it's deployed (Docker, compose, the `.env` values), plus backups and the tested restore.
-- The design decisions worth explaining, each in a sentence or two: per-change endpoints instead of saving a whole document; server responses replace client state; integer cents; bills separate from payments (history for free, payment amount as a snapshot); the client choosing the month (timezones); idempotent PUT/DELETE for paid/unpaid; the tile pattern and `useLiveData`, including the stale-refresh guard; deactivate instead of delete.
+- The design decisions worth explaining, each in a sentence or two: per-change endpoints instead of saving a whole document; server responses replace client state; integer cents; bills separate from payments (history for free, payment amount as a snapshot); the client choosing the month (timezones); idempotent PUT/DELETE for paid/unpaid; the tile pattern and `useLiveData`, including the stale-refresh guard and the one-at-a-time change queue; deactivate instead of delete.
 - Honest limitations: no auth (tailnet only), no offline support, and the items under "Known issues".
 
 ## Session log
@@ -245,7 +246,7 @@ The README is the first thing anyone sees on GitHub, and it still describes the 
 - Built the finance tile, bills only. Budgets are a different feature (a spending log against a limit) and were left for later. Bills and payments are separate tables; payments store their own amount, so history survives price changes.
 - Backend: `bills`/`payments` tables and `/finance/...` endpoints. The client sends the month (`"2026-11"`) because the container runs in UTC. Paid/unpaid are idempotent PUT/DELETE. Every response is the viewed month, including inactive bills.
 - Frontend: extracted the tile pattern (`useLiveData`, `Tile`, `previewOf`/`viewOf`) out of `App.tsx` once there were two real tiles, made `request<T>` generic, and added `FinanceView` with add/edit/deactivate/reactivate and `money.ts`. Added a stale-refresh guard to `useLiveData` after confirming a slow background refresh could undo a just-ticked bill.
-- Tried sending changes one at a time (a promise-chain queue in `request()`) so two fast taps can't have their answers arrive out of order, then reverted it. It's back to a plain `request()`; out-of-order answers stay a known issue.
+- Made changes go out one at a time (a promise-chain queue in `request()`), so two fast taps can't have their answers arrive out of order. Chosen over server-side version numbers as the smaller change.
 - Confirmed the compose port is configurable via `API_PORT` in the homelab's gitignored `server/.env`, so `git pull` there stays clean.
 - Fixed a CSS typo (`overflow-y: auto:`) that stopped the expanded view from scrolling itself.
 
