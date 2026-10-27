@@ -10,6 +10,15 @@ import {
   type GymPlan,
 } from "./data";
 
+// The one-line summary shown on the gym tile.
+export function gymPreview(plan: GymPlan): string {
+  const day = plan.days[plan.nextDayIndex];
+  const today = day.exercises.filter((ex) => ex.active);
+  if (today.length === 0) return `Next: ${day.name} — no exercises picked`;
+  const first = today[0];
+  return `Next: ${day.name} — ${first.name} ${first.weight}kg × ${first.reps}`;
+}
+
 type Props = {
   plan: GymPlan;
   onChange: (plan: GymPlan) => void;
