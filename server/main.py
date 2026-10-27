@@ -18,10 +18,12 @@ from db import (
     mark_paid,
     mark_unpaid,
     reorder_exercises,
+    update_bill,
     update_exercise,
 )
 from models import (
     PERIOD_PATTERN,
+    BillUpdate,
     ExerciseOrder,
     ExerciseUpdate,
     FinanceMonth,
@@ -121,6 +123,15 @@ def get_finance_month(period: PeriodInPath) -> FinanceMonth:
 def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
     with connect() as conn:
         add_bill(conn, new.name, new.amount_cents, new.due_day)
+        return load_month(conn, period)
+
+
+@app.patch("/finance/bills/{bill_id}")
+def patch_bill(bill_id: str, update: BillUpdate, period: PeriodInQuery) -> FinanceMonth:
+    with connect() as conn:
+        changes = update.model_dump(exclude_none=True)
+        if not update_bill(conn, bill_id, changes):
+            raise HTTPException(status_code=404, detail="Bill not found")
         return load_month(conn, period)
 
 

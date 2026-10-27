@@ -304,3 +304,23 @@ def mark_unpaid(conn, bill_id: str, period: str) -> bool:
         (bill_id, period),
     )
     return True
+
+
+BILL_EDITABLE_COLUMNS = {"name", "amount_cents", "due_day", "active"}
+
+
+def update_bill(conn, bill_id: str, changes: dict) -> bool:
+    fields = {k: v for k, v in changes.items() if k in BILL_EDITABLE_COLUMNS}
+    if "active" in fields:
+        fields["active"] = int(fields["active"])
+
+    if not fields:
+        row = conn.execute("SELECT 1 FROM bills WHERE id = ?", (bill_id,)).fetchone()
+        return row is not None
+
+    assignments = ", ".join(f"{column} = ?" for column in fields)
+    cursor = conn.execute(
+        f"UPDATE bills SET {assignments} WHERE id = ?",
+        (*fields.values(), bill_id),
+    )
+    return cursor.rowcount == 1

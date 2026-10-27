@@ -74,3 +74,11 @@ class NewBill(CamelModel):
     name: str = Field(min_length=1)
     amount_cents: int = Field(ge=0)
     due_day: int = Field(ge=1, le=31)
+
+
+class BillUpdate(CamelModel):
+    # Every field is optional: send only what you're changing.
+    name: str | None = Field(default=None, min_length=1)
+    amount_cents: int | None = Field(default=None, ge=0)
+    due_day: int | None = Field(default=None, ge=1, le=31)
+    active: bool | None = None
