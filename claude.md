@@ -193,3 +193,7 @@ Starting thoughts from the previous chat, to discuss rather than treat as decide
 - **Backend:** new tables (plain `CREATE TABLE IF NOT EXISTS` is enough for new tables, no migration needed), Pydantic models and `/finance/...` endpoints following the same pattern as the gym endpoints. Financial data automatically gets the same backups, since it's the same database file.
 - **Good moment for the tile abstraction:** finance is the second real tile, so this is when to pull the gym-specific code out of `App.tsx` into a shared pattern.
 - **Open question:** is this only fixed monthly bills, or also budgets (the placeholder says "Groceries: 50/250", which sounds like a spending budget)? Those are different features, so decide that first.
+
+## Session log
+
+(newest first)
