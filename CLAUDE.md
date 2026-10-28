@@ -113,7 +113,7 @@ dashboard/
 
 **`FinanceView.tsx`**
 - `financePreview(month)`: "4 of 7 paid · € 420,00 still due", "All 7 paid this month", or "No bills yet".
-- Shows the month name, the summary, and the month's bills (sorted by due day on the server). Each row: a checkbox inside a `<label>` (tapping the name ticks it), "Due 15 Oct" or "Paid 27 Oct", the amount, and ✎. A paid row shows the payment's stored amount, not the bill's current one.
+- Shows the month name, the summary, and the month's bills (ordered on the server: unpaid by due day first, then paid ones in the order they were ticked, so ticking a bill moves it to the bottom). Each row: a checkbox inside a `<label>` (tapping the name ticks it), "Due 15 Oct" or "Paid 27 Oct", the amount, and ✎. A paid row shows the payment's stored amount, not the bill's current one.
 - Every action uses `month.period` (the month on screen), never `currentPeriod()`.
 - Overdue (unpaid and past its due date) shows the due date in red. A bill due on the 31st falls on the last day of shorter months (`new Date(year, month, 0)` trick).
 - `BillForm` is shared by "New bill" and editing. It holds its own field state, validates with `parseEuros` and 1–31, and resets to its starting values after a successful save. `run()` returns whether the request worked, so a failed save keeps what you typed. Escape in the edit form cancels with `stopPropagation()`, so it doesn't close the whole tile.
@@ -149,7 +149,7 @@ dashboard/
   - `bills (id, name, amount_cents, due_day, position, active)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day.
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
 - Money is integer cents everywhere, including the API.
-- `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills plus any deactivated bill paid that month, ordered by `due_day, position`, plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
+- `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills plus any deactivated bill paid that month, ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
 - `mark_paid` uses `INSERT ... ON CONFLICT (bill_id, period) DO NOTHING`, so marking twice keeps the first payment and timestamp. `mark_unpaid` deletes the row; unpaying an unpaid bill isn't an error. Both return `False` (→ 404) only when the bill doesn't exist.
 - `update_bill` follows the `update_exercise` pattern with its own `BILL_EDITABLE_COLUMNS` whitelist. Bills are never deleted, only deactivated (foreign keys would block deleting a bill with payments anyway).
 - `?` placeholders everywhere. The dynamic `SET` clause in `update_exercise` only takes column names from a fixed `EDITABLE_COLUMNS` set.
@@ -241,6 +241,10 @@ The README is the first thing anyone sees on GitHub, and it still describes the 
 ## Session log
 
 (newest first)
+
+**2026-10-28**
+- Paid bills now move to the bottom of the month list (in the order they were ticked); unpaid bills stay ordered by due day. Done in the `ORDER BY` of `load_month`, so the frontend didn't change.
+- The finance tile wouldn't open because the homelab was still running a build from before `inactive` existed; `month.inactive.length` threw and React blanked the page. Fixed by rebuilding the container. Lesson: after backend changes, redeploy the homelab before testing the desktop app against it.
 
 **2026-10-27 (finance)**
 - Built the finance tile, bills only. Budgets are a different feature (a spending log against a limit) and were left for later. Bills and payments are separate tables; payments store their own amount, so history survives price changes.
