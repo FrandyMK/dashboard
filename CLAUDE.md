@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** check the swipeable day cards on the phone, bring the README up to date (month switching and the gym days screen), add screenshots, then the to-do tile. See the "Next step" section.
+**Next step:** check the swipeable day and exercise cards on the phone, add README screenshots, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -116,7 +116,7 @@ dashboard/
 - `DayView` has two sections: "Today's workout" (active exercises, always open) and the pool, a closed-by-default `<details className="pool">` titled "All push day exercises (5)", which also holds the "add exercise" input. `<details>` keeps its own open state; React doesn't touch it on re-render, so background refreshes don't close it. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−).
 - Exercises in the pool (not in today's workout) can be deleted with ✕. It takes two clicks: the first arms the button (red ✓), the second deletes. Moving the mouse away or tapping elsewhere disarms it (`confirmDelete` state, reset on `onMouseLeave` and `onBlur`).
 - "Complete workout ✓" sends the opened day's id. The server logs a snapshot of that day (see `workouts` under Database) and makes the day after it (in the days-screen order) the next one, then the view returns to the days screen. So days can be done in any order and "Next" still follows the order on screen.
-- Collapsible cards on the phone: `openExercise` state (`string | null`, one open at a time, like `editing` in `FinanceView`). The name is a `<button className="ex-name">` with `aria-expanded` that toggles it, and it contains a faded `.ex-summary` ("3 × 8 · 80 kg") shown only on the phone while closed. Sets, reps, weight, unit, delete and note sit inside `.ex-details > .ex-details-inner`; ▲▼ and +/− stay outside, so they work on a closed card. The delete button sits in a `.ex-delete` span (empty for active exercises) so the slot always exists. On the desktop the click changes state but CSS ignores it.
+- Collapsible, swipeable cards on the phone: `openExercise` state (`string | null`, one open at a time, like `editing` in `FinanceView`). Each `<li className="exercise">` holds two wrappers: `.ex-card` (the name button and the details) and `.ex-actions` (▲▼ and +/−, so they work on a closed card). The name is a `<button className="ex-name">` with `aria-expanded` that toggles it; it contains `.ex-title` (the name), a faded `.ex-summary` ("3 × 8 · 80 kg") and, if the exercise has a note, `.ex-note-preview`. Summary and preview are shown only on the phone while closed. Sets, reps, weight, unit, delete and note sit inside `.ex-details > .ex-details-inner`. The delete button sits in a `.ex-delete` span (empty for active exercises) so the slot always exists. On the desktop the click changes state but CSS ignores it.
 
 **`FinanceView.tsx`**
 - `financePreview(month)`: "4 of 7 paid · € 420,00 still due", "All 7 paid this month", or "No bills yet".
@@ -139,9 +139,9 @@ dashboard/
 - On the phone (a separate `@media (max-width: 640px)` block at the end of the file) each `.day-row` is a sideways-scrolling flex row with `scroll-snap-type: x mandatory`: the card is `flex: 0 0 100%` and snaps to `start`, `.day-actions` snaps to `end`. Swiping left reveals ▲▼ ✕, swiping back hides them. Pure CSS, no touch handlers, so the browser's own momentum and snapping are used; the scrollbar is hidden. Each row stays where you left it (opening one doesn't close the others). `.day-row.next .day-open` gets a brighter border; `.day-next` is the small "Next" badge.
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
 - Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid. The note input (`.ex-note`) uses `grid-column: 1 / -1`, so it wraps onto its own full-width line under the row.
-- On the desktop `.ex-details` and `.ex-details-inner` are `display: contents`, so their children are cells of the row grid as before. In the HTML, delete and note now come before ▲▼ and +/−, so `.ex-delete` and `.ex-note` get `order: 1` to put them back at the end of the row.
+- On the desktop `.ex-card`, `.ex-actions`, `.ex-details` and `.ex-details-inner` are all `display: contents`, so their children are cells of the 8-column row grid as before; `.ex-summary` and `.ex-note-preview` are `display: none`. In the HTML, delete and note now come before ▲▼ and +/−, so `.ex-delete` and `.ex-note` get `order: 1` to put them back at the end of the row.
 - Finance section: bill rows are a 4-column grid (`1fr auto 7rem 2rem`: name, due, amount, ✎). `.bill-form` is a grid shared by the add and edit forms; a local CSS variable `--field-bg` switches field colours between the two (page background vs. on a tile). `.bill.editing { display: block }` turns off the row grid while editing. `.month-nav` is a wrapping flex row; its buttons get `--tile-bg` because they sit on the page background, and the `h2` has a `min-width` so › doesn't move between month names.
-- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become collapsible cards (`"name order toggle" / "details details details"`; inside the details `"sets reps weight delete" / "note note note note"`). The slide is `grid-template-rows: 0fr → 1fr` on `.ex-details` with a 200ms transition, because `height: auto` can't be animated; the inner box has `min-height: 0; overflow: hidden`, and `visibility: hidden` when closed so its inputs can't take focus or taps (visibility only switches off at the end of the closing transition). bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
+- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become swipeable, collapsible cards. Like `.day-row`, each `.exercise` is a sideways-scrolling flex row with `scroll-snap-type: x mandatory` (no background or padding of its own): `.ex-card` is `flex: 0 0 100%`, snaps to `start` and carries the card background; `.ex-actions` snaps to `end`, so swiping left reveals ▲▼ and +/−. The closed `.ex-name` is a grid `"title note" / "summary note"`: the note preview sits on the right, muted italic, `max-width: 11rem`, clamped to two lines with `-webkit-line-clamp`. Opening the card hides summary and preview; inside the details the areas are `"sets reps weight delete" / "note note note note"`. The header row is hidden with `.exercise.exercise-header` (the extra class is needed, or the later `.exercise { display: flex }` would show it again). The slide is `grid-template-rows: 0fr → 1fr` on `.ex-details` with a 200ms transition, because `height: auto` can't be animated; the inner box has `min-height: 0; overflow: hidden`, and `visibility: hidden` when closed so its inputs can't take focus or taps (visibility only switches off at the end of the closing transition). bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
 
 ### Backend details
 
@@ -230,11 +230,11 @@ hl.window_rule({
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - A bill's start month can't be changed in the UI. A bill added while viewing the wrong month needs `UPDATE bills SET start_period = ...` by hand.
 - Deactivating a bill removes it from every month it wasn't paid in, including past ones (there's no `end_period`).
+- The README doesn't mention the swipeable exercise cards or the note preview yet (Features, "On the phone, each exercise is a collapsed card…", line ~26; and the "Swipe without JavaScript" design decision only talks about day rows).
 - Days can't be renamed in the UI (only added, deleted and reordered). A typo means delete and re-add, or `UPDATE workout_days SET name = ...`.
 - Escape inside an opened gym day closes the whole tile instead of going back to the days screen (`App`'s window listener handles Escape).
 - The gym days work (`a447223`..`ee3910f`) is deployed on the homelab. Not confirmed: whether the desktop app was rebuilt afterwards.
 - In a month other than the current one, the summary still says "All 9 paid this month".
-- The README is behind on month switching: line ~190 (Limitations) still says "Finance shows only the current month", and the roadmap (line ~203) lists switching months as not done. Features (line ~26) could mention it.
 - Not confirmed: whether the desktop app was rebuilt (`npm run tauri build -- --no-bundle`) after the month-switching deploy, and how the month bar looks on the phone.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
 - Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
@@ -249,7 +249,7 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README: month switching, the gym days screen, plus screenshots (next, see below)
+1. README screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: a custom amount when marking paid; maybe editing a bill's start month
@@ -258,22 +258,23 @@ hl.window_rule({
 7. Follow the active Omarchy theme colours automatically
 8. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
 
-## Next step: deploy, then finish the README
+## Next step: check the phone, then README screenshots
 
-First check the swipeable day cards on the phone after deploying them (`cd ~/dashboard/server && git pull && docker compose up -d --build` on the homelab), and rebuild the desktop app (`npm run tauri build -- --no-bundle`) if that wasn't done yet.
-
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. Three things are missing:
-
-- **Gym days screen.** Features: the tile opens on a list of days (add, delete, reorder; "Next" badge), tapping a day opens it, the pool is collapsed, Complete logs the opened day and goes back. Design decisions: why opening a day doesn't change the rotation (only Complete does), and that `next_day_index` is a position fixed up on delete/reorder. Endpoints if the README lists them.
-
-- **Month switching.** Update Features (line ~26), drop "Finance shows only the current month" from Limitations (line ~190, keep the sentence about the paid amount), tick "switch between months" in the roadmap (line ~203, keep "custom amount" open), and consider a short design-decision paragraph on `start_period` (why bills need a start month, and that adding while viewing a month schedules it from that month).
-- **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
+- **Phone check.** The swipeable day cards (`0aea5c4`) and exercise cards with a note preview (`9a46c93`) are pushed, but it's not confirmed that the homelab was redeployed since (`cd ~/dashboard/server && git pull && docker compose up -d --build`) or that they were tried on the real phone (only checked in a phone-sized headless Chromium). Also rebuild the desktop app (`npm run tauri build -- --no-bundle`) if that wasn't done after the gym days work.
+- **Screenshots.** The README text is up to date (`2d1b269`). An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone; the gym shot could show the days screen, the phone shot a swiped day card or an open exercise card), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
 
 ## Session log
 
 (newest first)
+
+**2026-11-07 (late night, exercise cards)**
+- Phone exercise cards now work like the day cards (`9a46c93`): the card fills the width with the name, "3 × 8 · 80 kg" and a two-line note preview on the right; swiping left reveals ▲▼ and +/−; tapping still opens sets/reps/weight/full note. Done with two `display: contents` wrappers (`.ex-card`, `.ex-actions`), so the desktop row is unchanged (checked side by side in headless Chromium at phone and desktop width). Pushed; homelab redeploy and a real-phone check not confirmed.
+- The project has no Prettier config; running Prettier with defaults rewraps unrelated lines (80 columns). The code style is roughly 100 columns.
+
+**2026-11-07 (late night, README)**
+- README brought up to date (`2d1b269`): finance month switching and the gym days screen in Features; five new design-decision paragraphs (bill start months, browsing months without breaking the rollover, opening a day doesn't change the rotation, the next day as a corrected position, swipe via CSS scroll snap); Limitations and roadmap updated (custom paid amount, editing a bill's start month and renaming days still open). Only the screenshots are missing.
 
 **2026-11-07 (late night, phone)**
 - The gym days work was deployed on the homelab. On the phone the ▲▼ ✕ took half of each day card's width, so day rows now scroll sideways with CSS scroll snap: the card fills the screen, swipe left to reveal the buttons. Chosen over JavaScript touch handling because it's a few lines of CSS and feels native. Committed and pushed as `0aea5c4`; checked in a phone-sized headless Chromium, not yet on the real phone.
