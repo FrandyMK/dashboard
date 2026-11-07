@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS exercises (
     reps INTEGER NOT NULL,
     position INTEGER NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
+    note TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (day_id, id)
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -84,9 +85,18 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        migrate(conn)
         count = conn.execute("SELECT COUNT(*) FROM workout_days").fetchone()[0]
         if count == 0:
             seed(conn)
+
+
+def migrate(conn):
+    # Databases created before a column existed don't get it from SCHEMA,
+    # because CREATE TABLE IF NOT EXISTS skips existing tables.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(exercises)")}
+    if "note" not in columns:
+        conn.execute("ALTER TABLE exercises ADD COLUMN note TEXT NOT NULL DEFAULT ''")
 
 
 def seed(conn):
@@ -110,7 +120,7 @@ def load_plan(conn) -> GymPlan:
         "SELECT id, name FROM workout_days ORDER BY position"
     ).fetchall()
     exercises = conn.execute(
-        "SELECT id, day_id, name, weight, sets, reps, active "
+        "SELECT id, day_id, name, weight, sets, reps, active, note "
         "FROM exercises ORDER BY position"
     ).fetchall()
     setting = conn.execute(
@@ -131,6 +141,7 @@ def load_plan(conn) -> GymPlan:
                         sets=e["sets"],
                         reps=e["reps"],
                         active=bool(e["active"]),
+                        note=e["note"],
                     )
                     for e in exercises
                     if e["day_id"] == d["id"]
@@ -141,7 +152,7 @@ def load_plan(conn) -> GymPlan:
     )
 
 
-EDITABLE_COLUMNS = {"name", "weight", "sets", "reps", "active"}
+EDITABLE_COLUMNS = {"name", "weight", "sets", "reps", "active", "note"}
 
 
 def update_exercise(conn, day_id: str, exercise_id: str, changes: dict) -> bool:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import {
   addExercise,
   completeWorkout,
@@ -59,6 +59,58 @@ function NumberField({
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
+  );
+}
+
+// A one-line note under an exercise. Like NumberField, it keeps its own text
+// while focused and only saves on Enter or clicking away. Escape cancels.
+function NoteField({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (note: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const [editing, setEditing] = useState(false);
+  // Set by Escape, so the blur that follows doesn't save.
+  const cancelled = useRef(false);
+
+  function commit() {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    const note = text.trim();
+    if (note !== value) onCommit(note);
+  }
+
+  function handleKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") e.currentTarget.blur();
+    if (e.key === "Escape") {
+      // Stop the Escape here, so it doesn't also close the whole tile.
+      e.stopPropagation();
+      cancelled.current = true;
+      e.currentTarget.blur();
+    }
+  }
+
+  return (
+    <input
+      className="ex-note"
+      type="text"
+      placeholder="Add a note…"
+      maxLength={500}
+      value={editing ? text : value}
+      onFocus={() => {
+        setText(value);
+        setEditing(true);
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={handleKey}
     />
   );
 }
@@ -190,6 +242,7 @@ export default function GymView({ plan, onChange }: Props) {
             {confirmDelete === ex.id ? "✓" : "✕"}
           </button>
         )}
+        <NoteField value={ex.note} onCommit={(note) => update(ex, { note })} />
       </li>
     );
   }

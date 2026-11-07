@@ -5,6 +5,7 @@ export type Exercise = {
   sets: number;
   reps: number;
   active: boolean;
+  note: string;
 };
 
 export type WorkoutDay = {

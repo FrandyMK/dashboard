@@ -15,6 +15,7 @@ class Exercise(CamelModel):
     sets: int
     reps: int
     active: bool
+    note: str
 
 
 class WorkoutDay(CamelModel):
@@ -35,6 +36,7 @@ class ExerciseUpdate(CamelModel):
     sets: int | None = Field(default=None, ge=1)
     reps: int | None = Field(default=None, ge=1)
     active: bool | None = None
+    note: str | None = Field(default=None, max_length=500)
 
 
 class NewExercise(CamelModel):

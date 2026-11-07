@@ -94,6 +94,24 @@ body {
   border-radius: 8px;
 }
 
+.exercise input.ex-note {
+  /* Its own line under the row, spanning every column. */
+  grid-column: 1 / -1;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.exercise input.ex-note:hover,
+.exercise input.ex-note:focus {
+  background: var(--bg);
+  border-color: #3b4261;
+  color: var(--text);
+  font-style: normal;
+}
+
 .exercise-scheme {
   color: var(--muted);
 }
@@ -397,7 +415,8 @@ body {
     grid-template-areas:
       "name  name  name"
       "sets  reps  weight"
-      "order delete toggle";
+      "order delete toggle"
+      "note  note  note";
     padding: 1rem;
   }
 
@@ -424,6 +443,9 @@ body {
   .delete {
     grid-area: delete;
     justify-self: end;
+  }
+  .exercise input.ex-note {
+    grid-area: note;
   }
 
   .field-label {
