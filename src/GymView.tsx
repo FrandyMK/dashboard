@@ -284,23 +284,27 @@ export default function GymView({ plan, onChange }: Props) {
         </ul>
       )}
 
-      <h3 className="section-title">All {day.name.toLowerCase()} exercises</h3>
-      {available.length > 0 && (
-        <ul className="exercise-list">
-          {headerRow()}
-          {available.map((ex, i) => exerciseRow(ex, i, available.length))}
-        </ul>
-      )}
+      <details className="pool" key={day.id}>
+        <summary className="section-title">
+          All {day.name.toLowerCase()} exercises ({available.length})
+        </summary>
+        {available.length > 0 && (
+          <ul className="exercise-list">
+            {headerRow()}
+            {available.map((ex, i) => exerciseRow(ex, i, available.length))}
+          </ul>
+        )}
 
-      <div className="add-exercise">
-        <input
-          placeholder="New exercise name"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-        />
-        <button onClick={add}>+ Add to list</button>
-      </div>
+        <div className="add-exercise">
+          <input
+            placeholder="New exercise name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+          />
+          <button onClick={add}>+ Add to list</button>
+        </div>
+      </details>
 
       <div className="gym-actions">
         <button onClick={() => run(completeWorkout)}>Complete workout →</button>

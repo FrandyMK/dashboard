@@ -450,7 +450,8 @@ body {
   background: #5c2a33;
 }
 
-.inactive-bills summary {
+.inactive-bills summary,
+.pool summary {
   cursor: pointer;
 }
 
