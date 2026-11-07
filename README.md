@@ -17,14 +17,16 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 
 **Gym tracker**
 - The tile shows the next workout day and its first exercise.
-- Each training day has a pool of every exercise I can do that day. Exercises move into and out of today's workout without losing their sets, reps or last weight.
+- Opening it shows all my training days (push, pull, legs, or whatever I set up), with the next one in the rotation marked. Days can be added, deleted and reordered, and the order on screen is the rotation. On the phone, swiping a day left reveals its move and delete buttons, so the card fills the screen the rest of the time.
+- Tapping a day opens it. Each day has a pool of every exercise I can do that day, collapsed by default to keep the screen calm. Exercises move into and out of today's workout without losing their sets, reps or last weight.
 - Sets, reps and weight are editable in place, and each exercise has a one-line note ("keep a straight back next time").
 - Reorder exercises, add new ones to the pool, and delete pool exercises (two clicks, so nothing disappears by accident).
-- "Complete workout" saves a log of that session (each exercise's sets, reps, weight and note, with the date), then advances the rotation (push → pull → legs → …). Changing a weight later never rewrites past sessions, so the long-term progression is kept.
+- "Complete workout" saves a log of that session (each exercise's sets, reps, weight and note, with the date), makes the day after it the next one, and goes back to the list of days. Changing a weight later never rewrites past sessions, so the long-term progression is kept.
 - On the phone, each exercise is a collapsed card showing its name, a short "3 × 8 · 80 kg" summary and the move buttons. Tapping the name slides it open to edit the sets, reps, weight and note.
 
 **Monthly bills**
 - The tile shows "4 of 7 paid · € 420,00 still due".
+- Flip between months with ‹ ›, and jump back with "This month". Past months show what was paid then; ticking a bill in a future month pays ahead.
 - Tick a bill off for the month; paid bills move to the bottom in the order they were ticked. Overdue bills show their due date in red.
 - Add, edit and deactivate bills. Deactivated bills can be brought back.
 - Payment history is kept per month, with the amount that was actually paid.
@@ -32,7 +34,7 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 **Everywhere**
 - Changes save immediately; there's no Save button.
 - Every device stays in sync: the dashboard refreshes on focus, when the phone wakes up, and once a minute.
-- A mobile layout with card rows, collapsible exercise cards, 16px inputs and large tap targets.
+- A mobile layout with card rows, collapsible exercise cards, swipeable day cards, 16px inputs and large tap targets.
 
 ## Architecture
 
@@ -93,9 +95,19 @@ server/
 
 **The client chooses the month.** The container runs in UTC, so in the Netherlands the server's "this month" would start an hour late (two in summer). Each device sends its own local month, like `2026-11`, and the tile rolls over to the new month by itself.
 
+**Bills have a start month.** Without one, a bill added in November would show up as unpaid (and overdue) in every earlier month. Each bill stores the first month it applies to, and a month shows active bills that have started, plus anything actually paid that month. A new bill starts in the month I'm looking at, which is also how I schedule a bill ahead: flip to December, add it there. Existing bills got their start month from their first payment when the column was added.
+
+**Browsing months doesn't break the rollover.** The finance tile keeps the month it shows as "a specific month" or "the current month". Only the second asks the device for today's month on every refresh, so on the 1st the tile moves on by itself. Closing the tile resets it to the current month, so the summary on the grid is always about now. The ‹ › arrows step from the month that's actually on screen, so two quick taps never skip a month I haven't seen.
+
 **Idempotent paid/unpaid.** Marking paid is a `PUT` and unpaid is a `DELETE` on the same URL, and doing either twice is harmless. A repeated tap or a retried request can't create a second payment or overwrite the first one's timestamp.
 
-**Deactivate instead of delete.** Bills are never deleted, only deactivated, so their payment history stays intact and a mistake is one click to undo. Exercises in the pool *can* be deleted, but only with a two-click confirm.
+**Opening a day doesn't change the rotation.** The server stores which day is next, and only "Complete workout" moves it on, to the day after the one I completed. Opening leg day to look at it, or doing days out of order, never changes anything by accident. Older desktop builds that send "Complete" without a day still get the old behaviour (complete whichever day is next), so the server and the apps can be updated separately.
+
+**The next day is a position, so it's corrected on every change to the list.** The next day is stored as an index into the ordered list of days. Deleting a day before it would shift it onto the wrong day, so deleting moves it back by one, and reordering looks up the same day again in its new position. Storing the day's id instead would avoid these corrections, but it would mean migrating the live database, and the corrections only live in two functions.
+
+**Swipe without JavaScript.** On the phone each day row is a sideways-scrolling strip with CSS scroll snapping: the card is exactly the screen's width, and the ▲▼ ✕ sit just past it. Swiping snaps to either the card or the buttons, with the phone's own scrolling physics and no touch-event code. On the desktop the buttons' wrapper is `display: contents`, so they're ordinary cells of the row.
+
+**Deactivate instead of delete.** Bills are never deleted, only deactivated, so their payment history stays intact and a mistake is one click to undo. Exercises in the pool and whole training days *can* be deleted, but only with a two-click confirm; deleting a day keeps its logged workouts, which store their own copies of the names.
 
 **Migrations at startup.** `CREATE TABLE IF NOT EXISTS` doesn't add new columns to an existing table. So when a column is added (like the exercise note), startup checks `PRAGMA table_info` and runs `ALTER TABLE` if the column is missing. The live database on the server upgrades itself on the next deploy.
 
@@ -187,7 +199,8 @@ These are known and deliberate for now:
 - **No authentication.** The API is only reachable on my tailnet, and only my own devices are on it. This would need to change before giving anyone else access.
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
-- **Finance shows only the current month.** The API already serves any month, but the UI can't switch yet. Marking a bill paid always records its current amount, which doesn't suit bills that vary month to month.
+- **Marking a bill paid always records its current amount**, which doesn't suit bills that vary month to month. A bill's start month also can't be changed in the app.
+- **Training days can't be renamed** in the app, only added, deleted and reordered.
 - **Workout history is stored but not shown yet.** Every completed session is logged, but the app doesn't read the log back yet, so there's no progression graph in the app. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
 
 ## Roadmap
@@ -200,7 +213,9 @@ These are known and deliberate for now:
 - [x] Workout history log
 - [ ] To-do tile
 - [ ] Habit tracker tile
-- [ ] Finance: switch between months, custom amount when marking paid
+- [x] Finance: switch between months
+- [x] Gym: add, delete and reorder training days
+- [ ] Finance: custom amount when marking paid
 - [ ] Progression graphs in the gym tile
 - [ ] Offline support for the phone, queuing changes until there's signal
 - [ ] Follow the active Omarchy theme colours automatically
