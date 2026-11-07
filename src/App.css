@@ -258,6 +258,11 @@ body {
   gap: 0.75rem;
 }
 
+/* On the desktop the wrapper disappears, so ▲▼ and ✕ are cells of the row grid. */
+.day-actions {
+  display: contents;
+}
+
 .day-open {
   display: flex;
   flex-direction: column;
@@ -675,5 +680,34 @@ body {
   .bill-form-actions button {
     flex: 1;
     padding: 0.9rem;
+  }
+}
+
+/* Phone: each day row scrolls sideways. The card fills the width; swiping
+   left snaps the ▲▼ ✕ into view, swiping back snaps the card full again. */
+@media (max-width: 640px) {
+  .day-row {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .day-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .day-open {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+  }
+
+  .day-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    scroll-snap-align: end;
   }
 }

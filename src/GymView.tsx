@@ -401,39 +401,44 @@ export default function GymView({ plan, onChange }: Props) {
                   {active} in workout · {d.exercises.length} in pool
                 </span>
               </button>
-              <span className="reorder">
-                <button
-                  className="move"
-                  title="Move up"
-                  disabled={i === 0}
-                  onClick={() => moveDay(i, -1)}
-                >
-                  ▲
-                </button>
-                <button
-                  className="move"
-                  title="Move down"
-                  disabled={i === plan.days.length - 1}
-                  onClick={() => moveDay(i, 1)}
-                >
-                  ▼
-                </button>
+              {/* On the phone these sit off-screen until the card is swiped left. */}
+              <span className="day-actions">
+                <span className="reorder">
+                  <button
+                    className="move"
+                    title="Move up"
+                    disabled={i === 0}
+                    onClick={() => moveDay(i, -1)}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="move"
+                    title="Move down"
+                    disabled={i === plan.days.length - 1}
+                    onClick={() => moveDay(i, 1)}
+                  >
+                    ▼
+                  </button>
+                </span>
+                {plan.days.length > 1 && (
+                  <button
+                    className={confirmDelete === d.id ? "move delete confirming" : "move delete"}
+                    title={
+                      confirmDelete === d.id
+                        ? "Click again to delete this day and its exercises"
+                        : "Delete day"
+                    }
+                    onClick={() =>
+                      confirmDelete === d.id ? removeDay(d.id) : setConfirmDelete(d.id)
+                    }
+                    onMouseLeave={() => setConfirmDelete(null)}
+                    onBlur={() => setConfirmDelete(null)}
+                  >
+                    {confirmDelete === d.id ? "✓" : "✕"}
+                  </button>
+                )}
               </span>
-              {plan.days.length > 1 && (
-                <button
-                  className={confirmDelete === d.id ? "move delete confirming" : "move delete"}
-                  title={
-                    confirmDelete === d.id
-                      ? "Click again to delete this day and its exercises"
-                      : "Delete day"
-                  }
-                  onClick={() => (confirmDelete === d.id ? removeDay(d.id) : setConfirmDelete(d.id))}
-                  onMouseLeave={() => setConfirmDelete(null)}
-                  onBlur={() => setConfirmDelete(null)}
-                >
-                  {confirmDelete === d.id ? "✓" : "✕"}
-                </button>
-              )}
             </li>
           );
         })}
