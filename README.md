@@ -198,3 +198,7 @@ These are known and deliberate for now:
 - [ ] Workout history log and progression graphs
 - [ ] Offline support for the phone, queuing changes until there's signal
 - [ ] Follow the active Omarchy theme colours automatically
+
+## License
+
+[MIT](LICENSE)

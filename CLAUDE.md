@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** finish the README (screenshots, license), then the to-do tile. See the "Next step" section.
+**Next step:** add screenshots to the README, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -77,6 +77,7 @@ dashboard/
 ├── .claude/commands/handoff.md  `/handoff`: updates this file at the end of a session
 ├── .dockerignore             At repo root (because the build context is the root)
 ├── .env.example              VITE_API_URL=http://homelab1:8010
+├── LICENSE                   MIT
 └── README.md                 Features, architecture, design decisions, setup, deployment, limitations
 ```
 
@@ -222,7 +223,7 @@ hl.window_rule({
 
 ## Roadmap
 
-1. Finish the README: screenshots and a license (next, see below)
+1. README screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: switching between months, a custom amount when marking paid
@@ -233,10 +234,9 @@ hl.window_rule({
 
 ## Next step: finish the README
 
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). Two things are missing:
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). One thing is missing:
 
 - **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
-- **A license.** There's no `LICENSE` file yet. MIT is the usual default for a portfolio project. Add the file and a short "License" section at the bottom of the README.
 
 After that: the to-do tile (roadmap item 2).
 
@@ -245,7 +245,7 @@ After that: the to-do tile (roadmap item 2).
 (newest first)
 
 **2026-11-07**
-- Rewrote the README for the client-server version: architecture, a "Design decisions" section (one short paragraph each), local setup with the `VITE_API_URL` shell override, Docker deployment, backups, honest limitations and an updated roadmap. Screenshots and a license are still missing.
+- Rewrote the README for the client-server version: architecture, a "Design decisions" section (one short paragraph each), local setup with the `VITE_API_URL` shell override, Docker deployment, backups, honest limitations and an updated roadmap. Added an MIT `LICENSE`. Screenshots are still missing.
 - Added a note to each exercise (`note` column, `NoteField`, full-width line under the row; a card row on the phone). It goes through the existing PATCH endpoint, so no new route. Added `migrate()` because `CREATE TABLE IF NOT EXISTS` doesn't add columns to the homelab's existing database; tested against a copy of a real snapshot.
 - The phone kept showing the old version after the deploy, until the home-screen app was re-added. Cause: no `Cache-Control` header, so the browser reused a cached `index.html`. Fixed with `FrontendFiles` (`no-cache` for the page, `immutable` for hashed assets). Both are deployed on the homelab and confirmed with `curl -I`.
 - Testing tip: `VITE_API_URL=http://localhost:8000 npm run tauri dev` instead of editing `.env`.
