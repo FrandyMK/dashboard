@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** add screenshots to the README, then the to-do tile. See the "Next step" section.
+**Next step:** bring the README up to date with this session's gym changes and add screenshots, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -111,7 +111,8 @@ dashboard/
 - `NoteField`: a one-line note under each exercise (e.g. "straight back next time"), built the same way as `NumberField`. Enter or clicking away saves (trimmed, only if changed); Escape cancels and uses `stopPropagation()` so it doesn't close the tile. Escape also blurs the input, which would normally save, so a `cancelled` ref tells that blur to skip. It's a ref, not state, because nothing has to re-render. Empty notes show as a faint "Add a note…". One current note per exercise, overwritten like the weight, not a history.
 - Two sections: "Today's workout" (active exercises) and the full pool for that day. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−). New exercises can be added to the pool.
 - Exercises in the pool (not in today's workout) can be deleted with ✕. It takes two clicks: the first arms the button (red ✓), the second deletes. Moving the mouse away or tapping elsewhere disarms it (`confirmDelete` state, reset on `onMouseLeave` and `onBlur`).
-- "Complete workout" advances the push → pull → legs rotation.
+- "Complete workout" advances the push → pull → legs rotation; the server also logs a snapshot of the workout first (see `workouts` under Database).
+- Collapsible cards on the phone: `openExercise` state (`string | null`, one open at a time, like `editing` in `FinanceView`). The name is a `<button className="ex-name">` with `aria-expanded` that toggles it, and it contains a faded `.ex-summary` ("3 × 8 · 80 kg") shown only on the phone while closed. Sets, reps, weight, unit, delete and note sit inside `.ex-details > .ex-details-inner`; ▲▼ and +/− stay outside, so they work on a closed card. The delete button sits in a `.ex-delete` span (empty for active exercises) so the slot always exists. On the desktop the click changes state but CSS ignores it.
 
 **`FinanceView.tsx`**
 - `financePreview(month)`: "4 of 7 paid · € 420,00 still due", "All 7 paid this month", or "No bills yet".
@@ -131,8 +132,9 @@ dashboard/
 **`App.css`**
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
 - Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid. The note input (`.ex-note`) uses `grid-column: 1 / -1`, so it wraps onto its own full-width line under the row.
+- On the desktop `.ex-details` and `.ex-details-inner` are `display: contents`, so their children are cells of the row grid as before. In the HTML, delete and note now come before ▲▼ and +/−, so `.ex-delete` and `.ex-note` get `order: 1` to put them back at the end of the row.
 - Finance section: bill rows are a 4-column grid (`1fr auto 7rem 2rem`: name, due, amount, ✎). `.bill-form` is a grid shared by the add and edit forms; a local CSS variable `--field-bg` switches field colours between the two (page background vs. on a tile). `.bill.editing { display: block }` turns off the row grid while editing.
-- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become cards via `grid-template-areas` (`order delete toggle`, then `note note note`), bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
+- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become collapsible cards (`"name order toggle" / "details details details"`; inside the details `"sets reps weight delete" / "note note note note"`). The slide is `grid-template-rows: 0fr → 1fr` on `.ex-details` with a 200ms transition, because `height: auto` can't be animated; the inner box has `min-height: 0; overflow: hidden`, and `visibility: hidden` when closed so its inputs can't take focus or taps (visibility only switches off at the end of the closing transition). bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
 
 ### Backend details
 
@@ -152,6 +154,9 @@ dashboard/
   - `settings (key, value)`, which holds `next_day_index`
   - `bills (id, name, amount_cents, due_day, position, active)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day.
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
+  - `workouts (id INTEGER PRIMARY KEY, day_id, day_name, completed_at)`: one row per completed session. `completed_at` is a UTC ISO timestamp.
+  - `workout_exercises (workout_id REFERENCES workouts, exercise_id, exercise_name, position, sets, reps, weight REAL, note, PRIMARY KEY (workout_id, exercise_id))`, plus index `workout_exercises_by_exercise (exercise_id)` for future per-exercise history queries. **No foreign key to `exercises`** and the name is copied, so renaming or deleting an exercise never blocks or rewrites history.
+- `complete_workout` finds the current day (`ORDER BY position LIMIT 1 OFFSET ?`, index taken `% day_count`), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then advances `next_day_index`. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
 - Money is integer cents everywhere, including the API.
 - `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills plus any deactivated bill paid that month, ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
 - `mark_paid` uses `INSERT ... ON CONFLICT (bill_id, period) DO NOTHING`, so marking twice keeps the first payment and timestamp. `mark_unpaid` deletes the row; unpaying an unpaid bill isn't an error. Both return `False` (→ 404) only when the bill doesn't exist.
@@ -168,7 +173,7 @@ dashboard/
 | POST | `/gym/days/{day_id}/exercises` | Add an exercise to the pool |
 | DELETE | `/gym/days/{day_id}/exercises/{exercise_id}` | Delete an exercise (404 if it doesn't exist) |
 | PUT | `/gym/days/{day_id}/order` | New order; must list every exercise of the day exactly once |
-| POST | `/gym/complete` | Advance to the next day |
+| POST | `/gym/complete` | Log today's active exercises as a workout, then advance to the next day |
 | GET | `/finance/months/{period}` | Bills for that month with their payment (or `null`), plus `inactive` |
 | POST | `/finance/bills?period=` | Add a bill (name, amountCents ≥ 0, dueDay 1–31) |
 | PATCH | `/finance/bills/{bill_id}?period=` | Change any of name, amountCents, dueDay, active |
@@ -201,7 +206,7 @@ hl.window_rule({
 ### Backups
 
 - `server/backup.py` uses SQLite's backup API (safe while the API is writing), runs `PRAGMA integrity_check`, and keeps the newest 14 snapshots in `server/data/backups/`.
-- Homelab cron, 03:00 nightly: `docker compose exec -T api python backup.py`, logging to `~/dashboard-backup.log`.
+- Homelab cron (user `dingo11`), 03:00 nightly in the homelab's UTC clock: `0 3 * * * cd /home/dingo11/dashboard/server && docker compose exec -T api python backup.py >> /home/dingo11/dashboard-backup.log 2>&1`. Until 2026-11-07 it still had the `/home/youruser` placeholder, so it never ran and the only snapshot was a manual one from 2026-10-22.
 - PC: systemd user timer (`~/.config/systemd/user/dashboard-backup.{service,timer}`) rsyncs snapshots to `~/Backups/dashboard/`, 5 minutes after boot and at 09:00, with `Persistent=true`. The PC keeps every snapshot.
 - A restore has been tested successfully by pointing a local API at a snapshot.
 - **To restore for real**, on the homelab: `docker compose down`, copy the snapshot over `data/dashboard.db`, `docker compose up -d`.
@@ -213,7 +218,10 @@ hl.window_rule({
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
-- Notes are one current note per exercise. A per-workout note history would belong with the progression-history roadmap item.
+- Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
+- The README is behind on this session: it doesn't mention the collapsible phone cards (line ~34), still says exercises keep only their latest weight (Limitations, line ~186), and lists "Workout history log" as not done (Roadmap, line ~198). The log is done; the graph isn't.
+- Pressing "Complete workout" without training logs a fake session, and double-tapping it logs two (and skips a day, as before). There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
+- Confirm the fixed cron actually runs on its own: after 03:00 UTC on 2026-11-08 there should be a `dashboard-..._0300.db` in `~/dashboard/server/data/backups/` and a `~/dashboard-backup.log` on the homelab. The rsync timer on the PC had been "succeeding" while there was nothing new to copy, so check the files, not the service status.
 - The Tauri template's leftover `greet` command is still in `src-tauri/src/lib.rs`.
 - No authentication on the API. Acceptable while only my own devices are on the tailnet; reconsider before sharing access with anyone.
 - The phone page needs a network connection. No offline support or proper PWA manifest yet.
@@ -223,19 +231,20 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README screenshots (next, see below)
+1. README: update for the gym changes, plus screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: switching between months, a custom amount when marking paid
-5. Gym progression history: a log of completed workouts and a progression graph (the current data only stores the *last* weight)
+5. Gym progression: the log is done and collecting data. Still to do, when wanted: a history endpoint (e.g. `GET /gym/days/{day_id}/exercises/{exercise_id}/history`, oldest first), a small SVG weight-over-time chart in the opened card, and maybe a one-off backfill from old backup snapshots. Not wanted yet (2026-11-07): for now it's enough that the data is stored and backed up
 6. PWA / offline support for the phone, queuing changes when there's no signal at the gym
 7. Follow the active Omarchy theme colours automatically
 8. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
 
 ## Next step: finish the README
 
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). One thing is missing:
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). Two things are missing:
 
+- **This session's gym changes.** Mention the collapsible phone cards and the workout log in Features, change the "only their latest weight" limitation (the plan still does, but completed workouts are logged), tick off the history log in the roadmap (the graph stays open), and consider a short design-decision paragraph on logging snapshots on Complete.
 - **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
@@ -243,6 +252,11 @@ After that: the to-do tile (roadmap item 2).
 ## Session log
 
 (newest first)
+
+**2026-11-07 (evening)**
+- Phone gym cards are now collapsible: a closed card shows the name, a faded "3 × 8 · 80 kg" summary, ▲▼ and +/−; tapping the name slides open sets/reps/weight/note/delete (one at a time). Done with wrappers that are `display: contents` on the desktop, so the desktop row is unchanged. Committed as `220fa4f`.
+- Workout history: "Complete workout" now snapshots that day's active exercises into new `workouts` / `workout_exercises` tables (`b271f23`), tested on a copy of a real snapshot and deployed on the homelab (tables confirmed there). Logged on Complete, not on every edit, so each entry is a real session. The history endpoint and graph were deliberately left for later.
+- Found that the homelab crontab still pointed to `/home/youruser/...`, so no nightly backup had ever run. Fixed to `dingo11`, ran it by hand (`dashboard-2026-11-07_1900.db`) and synced it to the PC.
 
 **2026-11-07**
 - Rewrote the README for the client-server version: architecture, a "Design decisions" section (one short paragraph each), local setup with the `VITE_API_URL` shell override, Docker deployment, backups, honest limitations and an updated roadmap. Added an MIT `LICENSE`. Screenshots are still missing.
