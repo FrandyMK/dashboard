@@ -208,80 +208,87 @@ function DayView({ day, onChange, onBack }: DayProps) {
 
     return (
       <li key={ex.id} className={classes}>
-        <button
-          className="ex-name"
-          aria-expanded={isOpen}
-          onClick={() => setOpenExercise(isOpen ? null : ex.id)}
-        >
-          {ex.name}
-          <span className="ex-summary">
-            {ex.sets} × {ex.reps} · {ex.weight} kg
-          </span>
-        </button>
-
-        <div className="ex-details">
-          <div className="ex-details-inner">
-            <label className="field field-sets">
-              <span className="field-label">Sets</span>
-              <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
-            </label>
-            <label className="field field-reps">
-              <span className="field-label">Reps</span>
-              <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
-            </label>
-            <label className="field field-weight">
-              <span className="field-label">Weight (kg)</span>
-              <NumberField
-                value={ex.weight}
-                step={2.5}
-                onCommit={(weight) => update(ex, { weight })}
-              />
-            </label>
-            <span className="unit">kg</span>
-            <span className="ex-delete">
-              {!ex.active && (
-                <button
-                  className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
-                  title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
-                  onClick={() =>
-                    confirmDelete === ex.id ? remove(ex.id) : setConfirmDelete(ex.id)
-                  }
-                  onMouseLeave={() => setConfirmDelete(null)}
-                  onBlur={() => setConfirmDelete(null)}
-                >
-                  {confirmDelete === ex.id ? "✓" : "✕"}
-                </button>
-              )}
+        {/* On the phone this is the card that fills the width; the buttons in
+            .ex-actions sit off-screen until it's swiped left. */}
+        <div className="ex-card">
+          <button
+            className="ex-name"
+            aria-expanded={isOpen}
+            onClick={() => setOpenExercise(isOpen ? null : ex.id)}
+          >
+            <span className="ex-title">{ex.name}</span>
+            <span className="ex-summary">
+              {ex.sets} × {ex.reps} · {ex.weight} kg
             </span>
-            <NoteField value={ex.note} onCommit={(note) => update(ex, { note })} />
+            {ex.note && <span className="ex-note-preview">{ex.note}</span>}
+          </button>
+
+          <div className="ex-details">
+            <div className="ex-details-inner">
+              <label className="field field-sets">
+                <span className="field-label">Sets</span>
+                <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
+              </label>
+              <label className="field field-reps">
+                <span className="field-label">Reps</span>
+                <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
+              </label>
+              <label className="field field-weight">
+                <span className="field-label">Weight (kg)</span>
+                <NumberField
+                  value={ex.weight}
+                  step={2.5}
+                  onCommit={(weight) => update(ex, { weight })}
+                />
+              </label>
+              <span className="unit">kg</span>
+              <span className="ex-delete">
+                {!ex.active && (
+                  <button
+                    className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
+                    title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
+                    onClick={() =>
+                      confirmDelete === ex.id ? remove(ex.id) : setConfirmDelete(ex.id)
+                    }
+                    onMouseLeave={() => setConfirmDelete(null)}
+                    onBlur={() => setConfirmDelete(null)}
+                  >
+                    {confirmDelete === ex.id ? "✓" : "✕"}
+                  </button>
+                )}
+              </span>
+              <NoteField value={ex.note} onCommit={(note) => update(ex, { note })} />
+            </div>
           </div>
         </div>
 
-        <span className="reorder">
+        <span className="ex-actions">
+          <span className="reorder">
+            <button
+              className="move"
+              title="Move up"
+              disabled={index === 0}
+              onClick={() => move(ex.id, -1)}
+            >
+              ▲
+            </button>
+            <button
+              className="move"
+              title="Move down"
+              disabled={index === total - 1}
+              onClick={() => move(ex.id, 1)}
+            >
+              ▼
+            </button>
+          </span>
           <button
-            className="move"
-            title="Move up"
-            disabled={index === 0}
-            onClick={() => move(ex.id, -1)}
+            className="move toggle"
+            title={ex.active ? "Remove from today" : "Add to today"}
+            onClick={() => update(ex, { active: !ex.active })}
           >
-            ▲
-          </button>
-          <button
-            className="move"
-            title="Move down"
-            disabled={index === total - 1}
-            onClick={() => move(ex.id, 1)}
-          >
-            ▼
+            {ex.active ? "−" : "+"}
           </button>
         </span>
-        <button
-          className="move toggle"
-          title={ex.active ? "Remove from today" : "Add to today"}
-          onClick={() => update(ex, { active: !ex.active })}
-        >
-          {ex.active ? "−" : "+"}
-        </button>
       </li>
     );
   }

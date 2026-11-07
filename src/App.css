@@ -122,11 +122,14 @@ body {
   text-align: left;
 }
 
-.ex-summary {
+.ex-summary,
+.ex-note-preview {
   display: none;
 }
 
 /* On the desktop the wrappers step aside: their children sit directly in the row's grid. */
+.ex-card,
+.ex-actions,
 .ex-details,
 .ex-details-inner {
   display: contents;
@@ -534,39 +537,82 @@ body {
     min-height: 100vh;
   }
 
-  .exercise-header,
+  .exercise.exercise-header,
   .exercise .unit {
     display: none;
   }
 
+  /* Each exercise row scrolls sideways, like the day cards: the card fills
+     the width, and swiping left snaps ▲▼ and +/− into view. */
   .exercise {
-    grid-template-columns: 1fr auto auto;
-    grid-template-areas:
-      "name    order   toggle"
-      "details details details";
-    row-gap: 0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    background: none;
+    padding: 0;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .exercise::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ex-card {
+    display: block;
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    background: var(--tile-bg);
+    border-radius: 8px;
     padding: 0.75rem 1rem;
   }
 
+  .ex-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    scroll-snap-align: end;
+  }
+
+  /* Closed card: name and "3 × 8 · 80 kg" on the left, the note on the right. */
   .ex-name {
-    grid-area: name;
-    font-weight: 600;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title   note"
+      "summary note";
+    column-gap: 1rem;
+    align-items: center;
+    width: 100%;
     min-height: 2.75rem;
   }
+  .ex-title {
+    grid-area: title;
+    font-weight: 600;
+  }
   .ex-summary {
+    grid-area: summary;
     display: block;
-    font-weight: normal;
     font-size: 0.85rem;
     color: var(--muted);
   }
-  .exercise.open .ex-summary {
+  .ex-note-preview {
+    grid-area: note;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    max-width: 11rem;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--muted);
+    text-align: right;
+  }
+  /* Open card: the full fields and note take over. */
+  .exercise.open .ex-summary,
+  .exercise.open .ex-note-preview {
     display: none;
-  }
-  .exercise .reorder {
-    grid-area: order;
-  }
-  .toggle {
-    grid-area: toggle;
   }
 
   /* The slide: a grid row that animates from 0fr (closed) to 1fr (its full height). */
