@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** rewrite the README. See the "Next step" section.
+**Next step:** finish the README (screenshots, license), then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -77,7 +77,7 @@ dashboard/
 ├── .claude/commands/handoff.md  `/handoff`: updates this file at the end of a session
 ├── .dockerignore             At repo root (because the build context is the root)
 ├── .env.example              VITE_API_URL=http://homelab1:8010
-└── README.md                 OUTDATED, see "Known issues"
+└── README.md                 Features, architecture, design decisions, setup, deployment, limitations
 ```
 
 ### Frontend details
@@ -208,7 +208,6 @@ hl.window_rule({
 
 ## Known issues and loose ends
 
-- **The README is outdated.** It still describes the local SQLite / `tauri-plugin-sql` version, the old draft-and-save flow, and lists "move the backend to a home server" as future work. It needs rewriting to cover the client-server architecture, the phone version, Docker deployment, backups, the finance tile and the design decisions above. High priority for the portfolio.
 - `fetch` has no timeout, and changes are queued one at a time. With bad signal (the gym), one hanging change blocks every change after it until the browser gives up. Fix when it matters: `signal: AbortSignal.timeout(10_000)` in `send()`. Relevant again for the offline/PWA work.
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
@@ -223,7 +222,7 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README rewrite (next, see below)
+1. Finish the README: screenshots and a license (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: switching between months, a custom amount when marking paid
@@ -232,21 +231,21 @@ hl.window_rule({
 7. Follow the active Omarchy theme colours automatically
 8. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
 
-## Next step: README rewrite
+## Next step: finish the README
 
-The README is the first thing anyone sees on GitHub, and it still describes the old local-only version. Rewrite it to cover:
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). Two things are missing:
 
-- What the dashboard is, with screenshots of the grid, the gym tile (including exercise notes) and the finance tile (desktop and phone).
-- The architecture: one React codebase in two places (Tauri on the desktop, the browser on the phone), one FastAPI + SQLite server on the homelab over Tailscale, the server as the single source of truth.
-- How to run it locally and how it's deployed (Docker, compose, the `.env` values), plus backups and the tested restore.
-- The design decisions worth explaining, each in a sentence or two: per-change endpoints instead of saving a whole document; server responses replace client state; integer cents; bills separate from payments (history for free, payment amount as a snapshot); the client choosing the month (timezones); idempotent PUT/DELETE for paid/unpaid; the tile pattern and `useLiveData`, including the stale-refresh guard and the one-at-a-time change queue; deactivate instead of delete; the startup migration for new columns; the cache headers (`no-cache` for `index.html`, `immutable` for hashed assets).
-- Honest limitations: no auth (tailnet only), no offline support, and the items under "Known issues".
+- **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
+- **A license.** There's no `LICENSE` file yet. MIT is the usual default for a portfolio project. Add the file and a short "License" section at the bottom of the README.
+
+After that: the to-do tile (roadmap item 2).
 
 ## Session log
 
 (newest first)
 
 **2026-11-07**
+- Rewrote the README for the client-server version: architecture, a "Design decisions" section (one short paragraph each), local setup with the `VITE_API_URL` shell override, Docker deployment, backups, honest limitations and an updated roadmap. Screenshots and a license are still missing.
 - Added a note to each exercise (`note` column, `NoteField`, full-width line under the row; a card row on the phone). It goes through the existing PATCH endpoint, so no new route. Added `migrate()` because `CREATE TABLE IF NOT EXISTS` doesn't add columns to the homelab's existing database; tested against a copy of a real snapshot.
 - The phone kept showing the old version after the deploy, until the home-screen app was re-added. Cause: no `Cache-Control` header, so the browser reused a cached `index.html`. Fixed with `FrontendFiles` (`no-cache` for the page, `immutable` for hashed assets). Both are deployed on the homelab and confirmed with `curl -I`.
 - Testing tip: `VITE_API_URL=http://localhost:8000 npm run tauri dev` instead of editing `.env`.
