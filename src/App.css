@@ -112,6 +112,32 @@ body {
   font-style: normal;
 }
 
+/* The name is a button (it opens the card on the phone) but looks like plain text. */
+.ex-name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.ex-summary {
+  display: none;
+}
+
+/* On the desktop the wrappers step aside: their children sit directly in the row's grid. */
+.ex-details,
+.ex-details-inner {
+  display: contents;
+}
+
+/* In the HTML, delete and note come before the arrows; this puts them back after. */
+.ex-delete,
+.exercise input.ex-note {
+  order: 1;
+}
+
 .exercise-scheme {
   color: var(--muted);
 }
@@ -411,19 +437,65 @@ body {
   }
 
   .exercise {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr auto auto;
     grid-template-areas:
-      "name  name  name"
-      "sets  reps  weight"
-      "order delete toggle"
-      "note  note  note";
-    padding: 1rem;
+      "name    order   toggle"
+      "details details details";
+    row-gap: 0;
+    padding: 0.75rem 1rem;
   }
 
   .ex-name {
     grid-area: name;
     font-weight: 600;
+    min-height: 2.75rem;
   }
+  .ex-summary {
+    display: block;
+    font-weight: normal;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .exercise.open .ex-summary {
+    display: none;
+  }
+  .reorder {
+    grid-area: order;
+  }
+  .toggle {
+    grid-area: toggle;
+  }
+
+  /* The slide: a grid row that animates from 0fr (closed) to 1fr (its full height). */
+  .ex-details {
+    grid-area: details;
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 200ms ease;
+  }
+  .exercise.open .ex-details {
+    grid-template-rows: 1fr;
+  }
+
+  .ex-details-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-areas:
+      "sets reps weight delete"
+      "note note note   note";
+    gap: 0.75rem;
+    align-items: end;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: 0;
+    visibility: hidden;
+    transition: padding-top 200ms ease, visibility 200ms;
+  }
+  .exercise.open .ex-details-inner {
+    padding-top: 0.75rem;
+    visibility: visible;
+  }
+
   .field-sets {
     grid-area: sets;
   }
@@ -433,16 +505,8 @@ body {
   .field-weight {
     grid-area: weight;
   }
-  .reorder {
-    grid-area: order;
-  }
-  .toggle {
-    grid-area: toggle;
-    justify-self: end;
-  }
-  .delete {
+  .ex-delete {
     grid-area: delete;
-    justify-self: end;
   }
   .exercise input.ex-note {
     grid-area: note;

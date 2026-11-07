@@ -120,6 +120,8 @@ export default function GymView({ plan, onChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Deleting takes two clicks: the first arms the button, the second deletes.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // On the phone, one exercise at a time shows its fields; the rest show only their name.
+  const [openExercise, setOpenExercise] = useState<string | null>(null);
 
   const day = plan.days[plan.nextDayIndex];
   const inWorkout = day.exercises.filter((ex) => ex.active);
@@ -182,26 +184,62 @@ export default function GymView({ plan, onChange }: Props) {
   }
 
   function exerciseRow(ex: Exercise, index: number, total: number) {
+    const isOpen = openExercise === ex.id;
+    const classes = ["exercise", !ex.active && "available", isOpen && "open"]
+      .filter(Boolean)
+      .join(" ");
+
     return (
-      <li key={ex.id} className={ex.active ? "exercise" : "exercise available"}>
-        <span className="ex-name">{ex.name}</span>
-        <label className="field field-sets">
-          <span className="field-label">Sets</span>
-          <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
-        </label>
-        <label className="field field-reps">
-          <span className="field-label">Reps</span>
-          <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
-        </label>
-        <label className="field field-weight">
-          <span className="field-label">Weight (kg)</span>
-          <NumberField
-            value={ex.weight}
-            step={2.5}
-            onCommit={(weight) => update(ex, { weight })}
-          />
-        </label>
-        <span className="unit">kg</span>
+      <li key={ex.id} className={classes}>
+        <button
+          className="ex-name"
+          aria-expanded={isOpen}
+          onClick={() => setOpenExercise(isOpen ? null : ex.id)}
+        >
+          {ex.name}
+          <span className="ex-summary">
+            {ex.sets} × {ex.reps} · {ex.weight} kg
+          </span>
+        </button>
+
+        <div className="ex-details">
+          <div className="ex-details-inner">
+            <label className="field field-sets">
+              <span className="field-label">Sets</span>
+              <NumberField value={ex.sets} step={1} onCommit={(sets) => update(ex, { sets })} />
+            </label>
+            <label className="field field-reps">
+              <span className="field-label">Reps</span>
+              <NumberField value={ex.reps} step={1} onCommit={(reps) => update(ex, { reps })} />
+            </label>
+            <label className="field field-weight">
+              <span className="field-label">Weight (kg)</span>
+              <NumberField
+                value={ex.weight}
+                step={2.5}
+                onCommit={(weight) => update(ex, { weight })}
+              />
+            </label>
+            <span className="unit">kg</span>
+            <span className="ex-delete">
+              {!ex.active && (
+                <button
+                  className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
+                  title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
+                  onClick={() =>
+                    confirmDelete === ex.id ? remove(ex.id) : setConfirmDelete(ex.id)
+                  }
+                  onMouseLeave={() => setConfirmDelete(null)}
+                  onBlur={() => setConfirmDelete(null)}
+                >
+                  {confirmDelete === ex.id ? "✓" : "✕"}
+                </button>
+              )}
+            </span>
+            <NoteField value={ex.note} onCommit={(note) => update(ex, { note })} />
+          </div>
+        </div>
+
         <span className="reorder">
           <button
             className="move"
@@ -227,22 +265,6 @@ export default function GymView({ plan, onChange }: Props) {
         >
           {ex.active ? "−" : "+"}
         </button>
-        {ex.active ? (
-          <span />
-        ) : (
-          <button
-            className={confirmDelete === ex.id ? "move delete confirming" : "move delete"}
-            title={confirmDelete === ex.id ? "Click again to delete" : "Delete exercise"}
-            onClick={() =>
-              confirmDelete === ex.id ? remove(ex.id) : setConfirmDelete(ex.id)
-            }
-            onMouseLeave={() => setConfirmDelete(null)}
-            onBlur={() => setConfirmDelete(null)}
-          >
-            {confirmDelete === ex.id ? "✓" : "✕"}
-          </button>
-        )}
-        <NoteField value={ex.note} onCommit={(note) => update(ex, { note })} />
       </li>
     );
   }
