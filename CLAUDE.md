@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** bring the README up to date with this session's gym changes and add screenshots, then the to-do tile. See the "Next step" section.
+**Next step:** add screenshots to the README, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -219,7 +219,6 @@ hl.window_rule({
 - Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
 - Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
-- The README is behind on this session: it doesn't mention the collapsible phone cards (line ~34), still says exercises keep only their latest weight (Limitations, line ~186), and lists "Workout history log" as not done (Roadmap, line ~198). The log is done; the graph isn't.
 - Pressing "Complete workout" without training logs a fake session, and double-tapping it logs two (and skips a day, as before). There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
 - Confirm the fixed cron actually runs on its own: after 03:00 UTC on 2026-11-08 there should be a `dashboard-..._0300.db` in `~/dashboard/server/data/backups/` and a `~/dashboard-backup.log` on the homelab. The rsync timer on the PC had been "succeeding" while there was nothing new to copy, so check the files, not the service status.
 - The Tauri template's leftover `greet` command is still in `src-tauri/src/lib.rs`.
@@ -231,7 +230,7 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README: update for the gym changes, plus screenshots (next, see below)
+1. README screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: switching between months, a custom amount when marking paid
@@ -242,9 +241,8 @@ hl.window_rule({
 
 ## Next step: finish the README
 
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap). Two things are missing:
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. One thing is missing:
 
-- **This session's gym changes.** Mention the collapsible phone cards and the workout log in Features, change the "only their latest weight" limitation (the plan still does, but completed workouts are logged), tick off the history log in the roadmap (the graph stays open), and consider a short design-decision paragraph on logging snapshots on Complete.
 - **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
@@ -255,6 +253,7 @@ After that: the to-do tile (roadmap item 2).
 
 **2026-11-07 (evening)**
 - Phone gym cards are now collapsible: a closed card shows the name, a faded "3 × 8 · 80 kg" summary, ▲▼ and +/−; tapping the name slides open sets/reps/weight/note/delete (one at a time). Done with wrappers that are `display: contents` on the desktop, so the desktop row is unchanged. Committed as `220fa4f`.
+- Updated the README for both gym changes (features, two design-decision paragraphs, limitations, roadmap).
 - Workout history: "Complete workout" now snapshots that day's active exercises into new `workouts` / `workout_exercises` tables (`b271f23`), tested on a copy of a real snapshot and deployed on the homelab (tables confirmed there). Logged on Complete, not on every edit, so each entry is a real session. The history endpoint and graph were deliberately left for later.
 - Found that the homelab crontab still pointed to `/home/youruser/...`, so no nightly backup had ever run. Fixed to `dingo11`, ran it by hand (`dashboard-2026-11-07_1900.db`) and synced it to the PC.
 

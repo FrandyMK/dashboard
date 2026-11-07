@@ -20,7 +20,8 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 - Each training day has a pool of every exercise I can do that day. Exercises move into and out of today's workout without losing their sets, reps or last weight.
 - Sets, reps and weight are editable in place, and each exercise has a one-line note ("keep a straight back next time").
 - Reorder exercises, add new ones to the pool, and delete pool exercises (two clicks, so nothing disappears by accident).
-- "Complete workout" advances the rotation (push → pull → legs → …).
+- "Complete workout" saves a log of that session (each exercise's sets, reps, weight and note, with the date), then advances the rotation (push → pull → legs → …). Changing a weight later never rewrites past sessions, so the long-term progression is kept.
+- On the phone, each exercise is a collapsed card showing its name, a short "3 × 8 · 80 kg" summary and the move buttons. Tapping the name slides it open to edit the sets, reps, weight and note.
 
 **Monthly bills**
 - The tile shows "4 of 7 paid · € 420,00 still due".
@@ -31,7 +32,7 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 **Everywhere**
 - Changes save immediately; there's no Save button.
 - Every device stays in sync: the dashboard refreshes on focus, when the phone wakes up, and once a minute.
-- A mobile layout with card rows, 16px inputs and large tap targets.
+- A mobile layout with card rows, collapsible exercise cards, 16px inputs and large tap targets.
 
 ## Architecture
 
@@ -88,6 +89,8 @@ server/
 
 **Bills and payments are separate tables.** A bill is the recurring thing (name, amount, due day); a payment is one row per bill per month it was paid. Payment history comes for free, and each payment stores its own amount, so raising a bill's price later doesn't rewrite past months.
 
+**Workouts are logged as snapshots on "Complete".** The plan (`exercises`) only holds what to do next time, so a weight change overwrites it. Completing a workout copies that day's active exercises into a `workouts` / `workout_exercises` log first. Logging on Complete instead of on every edit keeps typos and corrections out of the history, so each entry is a session that actually happened. Like payments, each entry stores its own exercise name and numbers, with no foreign key to the plan, so renaming or deleting an exercise later doesn't touch the past. At a few sessions a week it grows by roughly 100 KB a year, so nothing is ever pruned.
+
 **The client chooses the month.** The container runs in UTC, so in the Netherlands the server's "this month" would start an hour late (two in summer). Each device sends its own local month, like `2026-11`, and the tile rolls over to the new month by itself.
 
 **Idempotent paid/unpaid.** Marking paid is a `PUT` and unpaid is a `DELETE` on the same URL, and doing either twice is harmless. A repeated tap or a retried request can't create a second payment or overwrite the first one's timestamp.
@@ -95,6 +98,8 @@ server/
 **Deactivate instead of delete.** Bills are never deleted, only deactivated, so their payment history stays intact and a mistake is one click to undo. Exercises in the pool *can* be deleted, but only with a two-click confirm.
 
 **Migrations at startup.** `CREATE TABLE IF NOT EXISTS` doesn't add new columns to an existing table. So when a column is added (like the exercise note), startup checks `PRAGMA table_info` and runs `ALTER TABLE` if the column is missing. The live database on the server upgrades itself on the next deploy.
+
+**Collapsible cards without changing the desktop layout.** On the phone, an exercise's fields sit in a wrapper that slides open by animating a grid row from `0fr` to `1fr` (browsers can't animate `height: auto`). On the desktop, the same wrappers are `display: contents`, so their children stay cells of the row's 8-column grid, and `order` puts the cells back in their usual place.
 
 **Cache headers for the phone.** Without a caching instruction, the phone's home-screen app kept showing an old version after a deploy. `index.html` is now served with `Cache-Control: no-cache` (the browser checks with the server every time). The built JavaScript and CSS files have a content hash in their names, so they're cached forever.
 
@@ -183,7 +188,7 @@ These are known and deliberate for now:
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
 - **Finance shows only the current month.** The API already serves any month, but the UI can't switch yet. Marking a bill paid always records its current amount, which doesn't suit bills that vary month to month.
-- **Exercises keep only their latest weight and one current note**, not a history.
+- **Workout history is stored but not shown yet.** Every completed session is logged, but the app doesn't read the log back yet, so there's no progression graph in the app. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
 
 ## Roadmap
 
@@ -192,10 +197,11 @@ These are known and deliberate for now:
 - [x] Move the backend to a home server; phone version over Tailscale
 - [x] Nightly backups with a tested restore
 - [x] Finance tile: monthly bills and payment history
+- [x] Workout history log
 - [ ] To-do tile
 - [ ] Habit tracker tile
 - [ ] Finance: switch between months, custom amount when marking paid
-- [ ] Workout history log and progression graphs
+- [ ] Progression graphs in the gym tile
 - [ ] Offline support for the phone, queuing changes until there's signal
 - [ ] Follow the active Omarchy theme colours automatically
 
