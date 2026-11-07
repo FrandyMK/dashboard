@@ -8,9 +8,11 @@ from fastapi.staticfiles import StaticFiles
 
 from db import (
     add_bill,
+    add_day,
     add_exercise,
     complete_workout,
     connect,
+    delete_day,
     delete_exercise,
     init_db,
     load_month,
@@ -29,6 +31,7 @@ from models import (
     FinanceMonth,
     GymPlan,
     NewBill,
+    NewDay,
     NewExercise,
 )
 
@@ -60,6 +63,27 @@ def health() -> dict[str, str]:
 @app.get("/gym/plan")
 def get_gym_plan() -> GymPlan:
     with connect() as conn:
+        return load_plan(conn)
+
+
+@app.post("/gym/days")
+def post_day(new: NewDay) -> GymPlan:
+    with connect() as conn:
+        name = new.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name can't be empty")
+        add_day(conn, name)
+        return load_plan(conn)
+
+
+@app.delete("/gym/days/{day_id}")
+def remove_day(day_id: str) -> GymPlan:
+    with connect() as conn:
+        problem = delete_day(conn, day_id)
+        if problem == "not found":
+            raise HTTPException(status_code=404, detail="Day not found")
+        if problem == "last day":
+            raise HTTPException(status_code=400, detail="Can't delete the last day")
         return load_plan(conn)
 
 

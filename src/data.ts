@@ -86,6 +86,17 @@ export function reorderExercises(dayId: string, exerciseIds: string[]): Promise<
   });
 }
 
+export function addDay(name: string): Promise<GymPlan> {
+  return request<GymPlan>("/gym/days", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteDay(dayId: string): Promise<GymPlan> {
+  return request<GymPlan>(`/gym/days/${enc(dayId)}`, { method: "DELETE" });
+}
+
 export function completeWorkout(): Promise<GymPlan> {
   return request<GymPlan>("/gym/complete", { method: "POST" });
 }

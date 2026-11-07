@@ -43,6 +43,10 @@ class NewExercise(CamelModel):
     name: str = Field(min_length=1)
 
 
+class NewDay(CamelModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
 class ExerciseOrder(CamelModel):
     exercise_ids: list[str]
 

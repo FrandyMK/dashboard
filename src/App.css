@@ -242,6 +242,29 @@ body {
   font: inherit;
 }
 
+.days {
+  margin-top: 1.5rem;
+}
+
+.day-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem;
+}
+
+.day-row {
+  display: grid;
+  grid-template-columns: 1fr auto 2rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.day-next,
+.day-count {
+  color: var(--muted);
+}
+
 .reorder {
   display: flex;
   gap: 0.25rem;
@@ -451,7 +474,8 @@ body {
 }
 
 .inactive-bills summary,
-.pool summary {
+.pool summary,
+.days summary {
   cursor: pointer;
 }
 

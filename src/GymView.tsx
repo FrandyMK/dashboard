@@ -1,7 +1,9 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import {
+  addDay,
   addExercise,
   completeWorkout,
+  deleteDay,
   deleteExercise,
   reorderExercises,
   updateExercise,
@@ -117,6 +119,7 @@ function NoteField({
 
 export default function GymView({ plan, onChange }: Props) {
   const [newName, setNewName] = useState("");
+  const [newDayName, setNewDayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Deleting takes two clicks: the first arms the button, the second deletes.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -151,6 +154,18 @@ export default function GymView({ plan, onChange }: Props) {
   function remove(id: string) {
     setConfirmDelete(null);
     run(() => deleteExercise(day.id, id));
+  }
+
+  function addNewDay() {
+    const name = newDayName.trim();
+    if (!name) return;
+    setNewDayName("");
+    run(() => addDay(name));
+  }
+
+  function removeDay(id: string) {
+    setConfirmDelete(null);
+    run(() => deleteDay(id));
   }
 
   function move(id: string, direction: -1 | 1) {
@@ -309,6 +324,46 @@ export default function GymView({ plan, onChange }: Props) {
       <div className="gym-actions">
         <button onClick={() => run(completeWorkout)}>Complete workout →</button>
       </div>
+
+      <details className="days">
+        <summary className="section-title">Workout days ({plan.days.length})</summary>
+        <ul className="day-list">
+          {plan.days.map((d, i) => (
+            <li key={d.id} className="day-row">
+              <span className="day-name">
+                {d.name}
+                {i === plan.nextDayIndex && <span className="day-next"> · next</span>}
+              </span>
+              <span className="day-count">{d.exercises.length} exercises</span>
+              {plan.days.length > 1 && (
+                <button
+                  className={confirmDelete === d.id ? "move delete confirming" : "move delete"}
+                  title={
+                    confirmDelete === d.id
+                      ? "Click again to delete this day and its exercises"
+                      : "Delete day"
+                  }
+                  onClick={() => (confirmDelete === d.id ? removeDay(d.id) : setConfirmDelete(d.id))}
+                  onMouseLeave={() => setConfirmDelete(null)}
+                  onBlur={() => setConfirmDelete(null)}
+                >
+                  {confirmDelete === d.id ? "✓" : "✕"}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="add-exercise">
+          <input
+            placeholder="New day name, e.g. Calisthenics day"
+            value={newDayName}
+            onChange={(e) => setNewDayName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addNewDay()}
+          />
+          <button onClick={addNewDay}>+ Add day</button>
+        </div>
+      </details>
     </div>
   );
 }

@@ -158,8 +158,10 @@ def load_plan(conn) -> GymPlan:
         "SELECT value FROM settings WHERE key = 'next_day_index'"
     ).fetchone()
 
+    # Clamped so a stale index can never point past the last day.
+    next_day_index = int(setting["value"]) if setting else 0
     return GymPlan(
-        next_day_index=int(setting["value"]) if setting else 0,
+        next_day_index=next_day_index % len(days) if days else 0,
         days=[
             WorkoutDay(
                 id=d["id"],
@@ -251,6 +253,51 @@ def reorder_exercises(conn, day_id: str, exercise_ids: list[str]) -> bool:
             (position, day_id, exercise_id),
         )
     return True
+
+
+def add_day(conn, name: str) -> None:
+    # A new day goes at the end of the rotation, with an empty pool.
+    next_position = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM workout_days"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO workout_days (id, name, position) VALUES (?, ?, ?)",
+        (uuid4().hex, name, next_position),
+    )
+
+
+def delete_day(conn, day_id: str) -> str | None:
+    # Returns None on success, or why it couldn't be deleted.
+    days = [
+        row["id"]
+        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
+    ]
+    if day_id not in days:
+        return "not found"
+    if len(days) == 1:
+        return "last day"
+
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'next_day_index'"
+    ).fetchone()
+    current = (int(row["value"]) if row else 0) % len(days)
+    deleted = days.index(day_id)
+    # next_day_index is a position, so removing a day before the current one
+    # shifts the current day down by one. If the current day itself is
+    # deleted, the day after it slides into its place.
+    if deleted < current:
+        current -= 1
+    current %= len(days) - 1
+
+    # The workout log keeps its own copies of names, so history survives.
+    conn.execute("DELETE FROM exercises WHERE day_id = ?", (day_id,))
+    conn.execute("DELETE FROM workout_days WHERE id = ?", (day_id,))
+    conn.execute(
+        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (str(current),),
+    )
+    return None
 
 
 def log_workout(conn, day_id: str, day_name: str) -> None:
