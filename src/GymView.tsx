@@ -6,6 +6,7 @@ import {
   deleteDay,
   deleteExercise,
   reorderExercises,
+  selectDay,
   updateExercise,
   type Exercise,
   type ExerciseChanges,
@@ -330,10 +331,15 @@ export default function GymView({ plan, onChange }: Props) {
         <ul className="day-list">
           {plan.days.map((d, i) => (
             <li key={d.id} className="day-row">
-              <span className="day-name">
+              <button
+                className="day-name"
+                title={i === plan.nextDayIndex ? "This is the next workout" : `Switch to ${d.name}`}
+                disabled={i === plan.nextDayIndex}
+                onClick={() => run(() => selectDay(d.id))}
+              >
                 {d.name}
                 {i === plan.nextDayIndex && <span className="day-next"> · next</span>}
-              </span>
+              </button>
               <span className="day-count">{d.exercises.length} exercises</span>
               {plan.days.length > 1 && (
                 <button

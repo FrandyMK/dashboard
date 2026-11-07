@@ -20,12 +20,14 @@ from db import (
     mark_paid,
     mark_unpaid,
     reorder_exercises,
+    select_day,
     update_bill,
     update_exercise,
 )
 from models import (
     PERIOD_PATTERN,
     BillUpdate,
+    DaySelection,
     ExerciseOrder,
     ExerciseUpdate,
     FinanceMonth,
@@ -84,6 +86,14 @@ def remove_day(day_id: str) -> GymPlan:
             raise HTTPException(status_code=404, detail="Day not found")
         if problem == "last day":
             raise HTTPException(status_code=400, detail="Can't delete the last day")
+        return load_plan(conn)
+
+
+@app.put("/gym/next-day")
+def put_next_day(selection: DaySelection) -> GymPlan:
+    with connect() as conn:
+        if not select_day(conn, selection.day_id):
+            raise HTTPException(status_code=404, detail="Day not found")
         return load_plan(conn)
 
 

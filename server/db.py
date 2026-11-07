@@ -300,6 +300,22 @@ def delete_day(conn, day_id: str) -> str | None:
     return None
 
 
+def select_day(conn, day_id: str) -> bool:
+    # Makes this day the next workout, without logging anything.
+    days = [
+        row["id"]
+        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
+    ]
+    if day_id not in days:
+        return False
+    conn.execute(
+        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (str(days.index(day_id)),),
+    )
+    return True
+
+
 def log_workout(conn, day_id: str, day_name: str) -> None:
     # A snapshot of what was done today. Later changes to the plan
     # (weights, names, deleting an exercise) never rewrite these rows.

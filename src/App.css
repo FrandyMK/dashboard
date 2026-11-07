@@ -260,6 +260,24 @@ body {
   padding: 0.4rem 0;
 }
 
+.day-name {
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+
+.day-name:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.day-name:disabled {
+  cursor: default;
+}
+
 .day-next,
 .day-count {
   color: var(--muted);

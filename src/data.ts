@@ -97,6 +97,13 @@ export function deleteDay(dayId: string): Promise<GymPlan> {
   return request<GymPlan>(`/gym/days/${enc(dayId)}`, { method: "DELETE" });
 }
 
+export function selectDay(dayId: string): Promise<GymPlan> {
+  return request<GymPlan>("/gym/next-day", {
+    method: "PUT",
+    body: JSON.stringify({ dayId }),
+  });
+}
+
 export function completeWorkout(): Promise<GymPlan> {
   return request<GymPlan>("/gym/complete", { method: "POST" });
 }
