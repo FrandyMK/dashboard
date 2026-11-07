@@ -122,7 +122,9 @@ def get_finance_month(period: PeriodInPath) -> FinanceMonth:
 @app.post("/finance/bills")
 def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
     with connect() as conn:
-        add_bill(conn, new.name, new.amount_cents, new.due_day)
+        # A bill starts in the month it was added from: adding one while
+        # looking at December schedules it from December on.
+        add_bill(conn, new.name, new.amount_cents, new.due_day, period)
         return load_month(conn, period)
 
 

@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS bills (
     amount_cents INTEGER NOT NULL,
     due_day INTEGER NOT NULL,
     position INTEGER NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    start_period TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS payments (
     bill_id TEXT NOT NULL REFERENCES bills(id),
@@ -116,6 +117,17 @@ def migrate(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(exercises)")}
     if "note" not in columns:
         conn.execute("ALTER TABLE exercises ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+
+    # The first month a bill exists in, so earlier months don't list it as unpaid.
+    # Existing bills start in the first month they were paid, or else this month.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(bills)")}
+    if "start_period" not in columns:
+        conn.execute("ALTER TABLE bills ADD COLUMN start_period TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """UPDATE bills SET start_period = COALESCE(
+                   (SELECT MIN(period) FROM payments WHERE bill_id = bills.id), ?)""",
+            (datetime.now(timezone.utc).strftime("%Y-%m"),),
+        )
 
 
 def seed(conn):
@@ -289,9 +301,9 @@ def load_month(conn, period: str) -> FinanceMonth:
                   p.amount_cents AS paid_cents, p.paid_at
            FROM bills b
            LEFT JOIN payments p ON p.bill_id = b.id AND p.period = ?
-           WHERE b.active = 1 OR p.bill_id IS NOT NULL
+           WHERE (b.active = 1 AND b.start_period <= ?) OR p.bill_id IS NOT NULL
            ORDER BY p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position""",
-        (period,),
+        (period, period),
     ).fetchall()
     inactive = conn.execute(
         """SELECT id, name, amount_cents, due_day FROM bills
@@ -328,14 +340,14 @@ def load_month(conn, period: str) -> FinanceMonth:
     )
 
 
-def add_bill(conn, name: str, amount_cents: int, due_day: int) -> None:
+def add_bill(conn, name: str, amount_cents: int, due_day: int, start_period: str) -> None:
     next_position = conn.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM bills"
     ).fetchone()[0]
     conn.execute(
-        """INSERT INTO bills (id, name, amount_cents, due_day, position, active)
-           VALUES (?, ?, ?, ?, ?, 1)""",
-        (uuid4().hex, name, amount_cents, due_day, next_position),
+        """INSERT INTO bills (id, name, amount_cents, due_day, position, active, start_period)
+           VALUES (?, ?, ?, ?, ?, 1, ?)""",
+        (uuid4().hex, name, amount_cents, due_day, next_position, start_period),
     )
 
 
