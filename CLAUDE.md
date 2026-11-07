@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** bring the README up to date with month switching, add screenshots, then the to-do tile. See the "Next step" section.
+**Next step:** check the swipeable day cards on the phone, bring the README up to date (month switching and the gym days screen), add screenshots, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -87,7 +87,7 @@ dashboard/
 - `API_URL = import.meta.env.VITE_API_URL ?? ""`. Empty means same address the page came from (used by the phone version). The desktop sets it via a root `.env` to `http://homelab1:8010`, which is baked in at build time.
 - `request<T>()` is generic: each caller names the type it expects (`request<GymPlan>`, `request<FinanceMonth>`). This is a promise to the compiler only; nothing checks the response at runtime.
 - `request()` queues non-GET requests through `previousChange` so they're sent one at a time; `send()` does the actual fetch.
-- Gym: types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`; functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `completeWorkout`. Each returns the full updated `GymPlan`.
+- Gym: types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`; functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `addDay`, `deleteDay`, `reorderDays`, `completeWorkout(dayId)`. Each returns the full updated `GymPlan`.
 - Finance: types `Payment`, `MonthBill`, `Bill`, `FinanceMonth`, `NewBill`, `BillChanges`; functions `getFinanceMonth`, `addBill`, `updateBill`, `markPaid`, `markUnpaid`. Each takes the `period` being viewed and returns that `FinanceMonth`.
 - `currentPeriod()` gives the device's current month as `"2026-11"` in **local** time. `shiftPeriod(period, months)` moves a period forward or back (`shiftPeriod("2026-01", -1)` is `"2025-12"`); it builds `new Date(year, month - 1 + months, 1)`, which handles the year overflow, and formats it with `currentPeriod`. (`loadCurrentMonth()` is gone; the loader now lives in `App`.)
 
@@ -107,12 +107,15 @@ dashboard/
 
 **`GymView.tsx`**
 - Exports `gymPreview(plan)` (next day and its first active exercise) alongside the component. Because the file exports a non-component, Vite does a full page reload instead of Fast Refresh when it changes during development. Harmless. Same for `FinanceView.tsx`.
-- Receives `plan` and `onChange`. Every action calls the API through `run()`, and the server's response becomes the new state. No draft, no Save button.
+- Two components. The default export `GymView` is the **days screen**, the first thing you see when the tile opens; `DayView` is one opened day. `GymView` holds `openDayId` (`string | null`; `null` = the days screen) and renders `DayView` (with `key={day.id}`, so its state resets per day) when it's set. If the open day disappears (deleted on another device), it falls back to the list. Since `GymView` unmounts when the tile closes, every open starts on the days screen.
+- Days screen: one card (`.day-open` button) per day in rotation order, showing the name, a "Next" badge on `plan.days[plan.nextDayIndex]`, and "4 in workout · 9 in pool". Per row: ▲▼ (`reorderDays`, swap with the neighbour and send the full id list), and a two-click ✕ to delete (hidden when only one day is left). "+ Add day" input underneath.
+- Opening a day changes nothing on the server, so looking at leg day doesn't touch the rotation. "‹ All days" at the top of `DayView` goes back.
+- Every action calls the API through `run()`, and the server's response becomes the new state. No draft, no Save button. In `DayView`, `run()` returns whether it worked, so Complete only goes back to the list on success.
 - `NumberField`: holds its own text while focused and only saves on blur or Enter, so typing doesn't send a request per keystroke and background refreshes can't overwrite what's being typed. Uses `inputMode="decimal"`.
 - `NoteField`: a one-line note under each exercise (e.g. "straight back next time"), built the same way as `NumberField`. Enter or clicking away saves (trimmed, only if changed); Escape cancels and uses `stopPropagation()` so it doesn't close the tile. Escape also blurs the input, which would normally save, so a `cancelled` ref tells that blur to skip. It's a ref, not state, because nothing has to re-render. Empty notes show as a faint "Add a note…". One current note per exercise, overwritten like the weight, not a history.
-- Two sections: "Today's workout" (active exercises) and the full pool for that day. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−). New exercises can be added to the pool.
+- `DayView` has two sections: "Today's workout" (active exercises, always open) and the pool, a closed-by-default `<details className="pool">` titled "All push day exercises (5)", which also holds the "add exercise" input. `<details>` keeps its own open state; React doesn't touch it on re-render, so background refreshes don't close it. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−).
 - Exercises in the pool (not in today's workout) can be deleted with ✕. It takes two clicks: the first arms the button (red ✓), the second deletes. Moving the mouse away or tapping elsewhere disarms it (`confirmDelete` state, reset on `onMouseLeave` and `onBlur`).
-- "Complete workout" advances the push → pull → legs rotation; the server also logs a snapshot of the workout first (see `workouts` under Database).
+- "Complete workout ✓" sends the opened day's id. The server logs a snapshot of that day (see `workouts` under Database) and makes the day after it (in the days-screen order) the next one, then the view returns to the days screen. So days can be done in any order and "Next" still follows the order on screen.
 - Collapsible cards on the phone: `openExercise` state (`string | null`, one open at a time, like `editing` in `FinanceView`). The name is a `<button className="ex-name">` with `aria-expanded` that toggles it, and it contains a faded `.ex-summary` ("3 × 8 · 80 kg") shown only on the phone while closed. Sets, reps, weight, unit, delete and note sit inside `.ex-details > .ex-details-inner`; ▲▼ and +/− stay outside, so they work on a closed card. The delete button sits in a `.ex-delete` span (empty for active exercises) so the slot always exists. On the desktop the click changes state but CSS ignores it.
 
 **`FinanceView.tsx`**
@@ -132,6 +135,8 @@ dashboard/
 - `toEuroInput(cents)` gives `"950,00"` for pre-filling the edit form.
 
 **`App.css`**
+- Days screen: `.day-list` is a flex column; `.day-row` is a grid `1fr auto 2rem` (card, ▲▼, ✕). ▲▼ and ✕ sit in a `.day-actions` span that is `display: contents` on the desktop.
+- On the phone (a separate `@media (max-width: 640px)` block at the end of the file) each `.day-row` is a sideways-scrolling flex row with `scroll-snap-type: x mandatory`: the card is `flex: 0 0 100%` and snaps to `start`, `.day-actions` snaps to `end`. Swiping left reveals ▲▼ ✕, swiping back hides them. Pure CSS, no touch handlers, so the browser's own momentum and snapping are used; the scrollbar is hidden. Each row stays where you left it (opening one doesn't close the others). `.day-row.next .day-open` gets a brighter border; `.day-next` is the small "Next" badge.
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
 - Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid. The note input (`.ex-note`) uses `grid-column: 1 / -1`, so it wraps onto its own full-width line under the row.
 - On the desktop `.ex-details` and `.ex-details-inner` are `display: contents`, so their children are cells of the row grid as before. In the HTML, delete and note now come before ▲▼ and +/−, so `.ex-delete` and `.ex-note` get `order: 1` to put them back at the end of the row.
@@ -158,7 +163,9 @@ dashboard/
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
   - `workouts (id INTEGER PRIMARY KEY, day_id, day_name, completed_at)`: one row per completed session. `completed_at` is a UTC ISO timestamp.
   - `workout_exercises (workout_id REFERENCES workouts, exercise_id, exercise_name, position, sets, reps, weight REAL, note, PRIMARY KEY (workout_id, exercise_id))`, plus index `workout_exercises_by_exercise (exercise_id)` for future per-exercise history queries. **No foreign key to `exercises`** and the name is copied, so renaming or deleting an exercise never blocks or rewrites history.
-- `complete_workout` finds the current day (`ORDER BY position LIMIT 1 OFFSET ?`, index taken `% day_count`), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then advances `next_day_index`. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
+- `next_day_index` is a **position** in the `ORDER BY position` list, not a day id. Every function that changes the list of days fixes it up: `delete_day` lowers it by one if the deleted day came before it (deleting the current day lets the following day slide into its place), then takes it `% count`; `reorder_days` remembers which day it pointed to and looks that day up again in the new order. `load_plan` also clamps it `% len(days)` as a safety net, because the frontend reads `plan.days[plan.nextDayIndex]` directly. Storing a day id instead would avoid the fix-ups; not done because these three places cover it.
+- `add_day` appends at `MAX(position) + 1` with a `uuid4().hex` id and an empty pool. `delete_day` deletes the day's exercises and the day in one transaction, refuses the last remaining day, and returns `None`, `"not found"` or `"last day"` (→ 404 / 400). History survives because `workout_exercises` copies names and has no foreign key.
+- `complete_workout(conn, day_id=None)` logs the given day, or without one the day at `next_day_index` (what old clients send), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then sets `next_day_index` to the position after the logged day. Returns `False` (→ 404) for an unknown day. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
 - Money is integer cents everywhere, including the API.
 - `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills whose `start_period <= period` plus any bill paid that month (a payment always shows, even before the start or after deactivation), ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
 - `mark_paid` uses `INSERT ... ON CONFLICT (bill_id, period) DO NOTHING`, so marking twice keeps the first payment and timestamp. `mark_unpaid` deletes the row; unpaying an unpaid bill isn't an error. Both return `False` (→ 404) only when the bill doesn't exist.
@@ -175,7 +182,10 @@ dashboard/
 | POST | `/gym/days/{day_id}/exercises` | Add an exercise to the pool |
 | DELETE | `/gym/days/{day_id}/exercises/{exercise_id}` | Delete an exercise (404 if it doesn't exist) |
 | PUT | `/gym/days/{day_id}/order` | New order; must list every exercise of the day exactly once |
-| POST | `/gym/complete` | Log today's active exercises as a workout, then advance to the next day |
+| POST | `/gym/days` | Add a day (`{ name }`, trimmed, not empty) at the end of the rotation |
+| DELETE | `/gym/days/{day_id}` | Delete a day and its exercises (404 unknown, 400 if it's the last day) |
+| PUT | `/gym/days/order` | New day order (`{ dayIds }`); must list every day exactly once; keeps the same day as next |
+| POST | `/gym/complete` | Body `{ dayId }`: log that day's active exercises, then make the day after it next. Without a body: the current next day (older desktop builds) |
 | GET | `/finance/months/{period}` | Bills for that month with their payment (or `null`), plus `inactive` |
 | POST | `/finance/bills?period=` | Add a bill (name, amountCents ≥ 0, dueDay 1–31), starting in `period` |
 | PATCH | `/finance/bills/{bill_id}?period=` | Change any of name, amountCents, dueDay, active |
@@ -220,12 +230,15 @@ hl.window_rule({
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - A bill's start month can't be changed in the UI. A bill added while viewing the wrong month needs `UPDATE bills SET start_period = ...` by hand.
 - Deactivating a bill removes it from every month it wasn't paid in, including past ones (there's no `end_period`).
+- Days can't be renamed in the UI (only added, deleted and reordered). A typo means delete and re-add, or `UPDATE workout_days SET name = ...`.
+- Escape inside an opened gym day closes the whole tile instead of going back to the days screen (`App`'s window listener handles Escape).
+- The gym days work (`a447223`..`ee3910f`) is deployed on the homelab. Not confirmed: whether the desktop app was rebuilt afterwards.
 - In a month other than the current one, the summary still says "All 9 paid this month".
 - The README is behind on month switching: line ~190 (Limitations) still says "Finance shows only the current month", and the roadmap (line ~203) lists switching months as not done. Features (line ~26) could mention it.
 - Not confirmed: whether the desktop app was rebuilt (`npm run tauri build -- --no-bundle`) after the month-switching deploy, and how the month bar looks on the phone.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
 - Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
-- Pressing "Complete workout" without training logs a fake session, and double-tapping it logs two (and skips a day, as before). There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
+- Pressing "Complete workout" without training logs a fake session. A very fast double tap could still send two before the view switches back to the days screen. There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
 - Confirm the fixed cron actually runs on its own: after 03:00 UTC on 2026-11-08 there should be a `dashboard-..._0300.db` in `~/dashboard/server/data/backups/` and a `~/dashboard-backup.log` on the homelab. The rsync timer on the PC had been "succeeding" while there was nothing new to copy, so check the files, not the service status.
 - The Tauri template's leftover `greet` command is still in `src-tauri/src/lib.rs`.
 - No authentication on the API. Acceptable while only my own devices are on the tailnet; reconsider before sharing access with anyone.
@@ -236,7 +249,7 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README: month switching, plus screenshots (next, see below)
+1. README: month switching, the gym days screen, plus screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
 4. Finance extras: a custom amount when marking paid; maybe editing a bill's start month
@@ -245,9 +258,13 @@ hl.window_rule({
 7. Follow the active Omarchy theme colours automatically
 8. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
 
-## Next step: finish the README
+## Next step: deploy, then finish the README
 
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. Two things are missing:
+First check the swipeable day cards on the phone after deploying them (`cd ~/dashboard/server && git pull && docker compose up -d --build` on the homelab), and rebuild the desktop app (`npm run tauri build -- --no-bundle`) if that wasn't done yet.
+
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. Three things are missing:
+
+- **Gym days screen.** Features: the tile opens on a list of days (add, delete, reorder; "Next" badge), tapping a day opens it, the pool is collapsed, Complete logs the opened day and goes back. Design decisions: why opening a day doesn't change the rotation (only Complete does), and that `next_day_index` is a position fixed up on delete/reorder. Endpoints if the README lists them.
 
 - **Month switching.** Update Features (line ~26), drop "Finance shows only the current month" from Limitations (line ~190, keep the sentence about the paid amount), tick "switch between months" in the roadmap (line ~203, keep "custom amount" open), and consider a short design-decision paragraph on `start_period` (why bills need a start month, and that adding while viewing a month schedules it from that month).
 - **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
@@ -257,6 +274,14 @@ After that: the to-do tile (roadmap item 2).
 ## Session log
 
 (newest first)
+
+**2026-11-07 (late night, phone)**
+- The gym days work was deployed on the homelab. On the phone the ▲▼ ✕ took half of each day card's width, so day rows now scroll sideways with CSS scroll snap: the card fills the screen, swipe left to reveal the buttons. Chosen over JavaScript touch handling because it's a few lines of CSS and feels native. Committed and pushed as `0aea5c4`; checked in a phone-sized headless Chromium, not yet on the real phone.
+
+**2026-11-07 (late night)**
+- Gym pool is now a closed-by-default `<details>` (`a447223`); "Today's workout" stays open.
+- Workout days can be added, deleted (with their exercises; never the last one) and reordered (`ab502ef`, `ee3910f`). `next_day_index` stayed a position and is fixed up in `delete_day`/`reorder_days`, tested for deleting before/at/after the current day.
+- The gym tile now opens on a days screen; tapping a day opens it and Complete logs *that* day, makes the next one in screen order "Next" and goes back (`d468473`). A tap-to-switch endpoint (`cd2b9ad`) was tried first and removed, because opening a day to look at it shouldn't change the rotation. `POST /gym/complete` without a body still works for old desktop builds. All pushed; deploy not confirmed.
 
 **2026-11-07 (night)**
 - Finance month switching (`8c0913a`): `‹ ›` arrows and "This month". The month lives in `App` as `financePeriod` (`null` = current, so the 1st still rolls over), the loader is a `useCallback`, and closing the tile resets it. Confirmed beforehand that October's 9 payments were intact in the PC backup: rows in `payments` are never cleared when a month ends.
