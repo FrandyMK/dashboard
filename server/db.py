@@ -45,6 +45,25 @@ CREATE TABLE IF NOT EXISTS payments (
     paid_at TEXT NOT NULL,
     PRIMARY KEY (bill_id, period)
 );
+CREATE TABLE IF NOT EXISTS workouts (
+    id INTEGER PRIMARY KEY,
+    day_id TEXT NOT NULL,
+    day_name TEXT NOT NULL,
+    completed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workout_exercises (
+    workout_id INTEGER NOT NULL REFERENCES workouts(id),
+    exercise_id TEXT NOT NULL,
+    exercise_name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    sets INTEGER NOT NULL,
+    reps INTEGER NOT NULL,
+    weight REAL NOT NULL,
+    note TEXT NOT NULL,
+    PRIMARY KEY (workout_id, exercise_id)
+);
+CREATE INDEX IF NOT EXISTS workout_exercises_by_exercise
+    ON workout_exercises (exercise_id);
 """
 
 # (id, name, weight, sets, reps, active) — only used to fill an empty database.
@@ -222,6 +241,23 @@ def reorder_exercises(conn, day_id: str, exercise_ids: list[str]) -> bool:
     return True
 
 
+def log_workout(conn, day_id: str, day_name: str) -> None:
+    # A snapshot of what was done today. Later changes to the plan
+    # (weights, names, deleting an exercise) never rewrite these rows.
+    cursor = conn.execute(
+        "INSERT INTO workouts (day_id, day_name, completed_at) VALUES (?, ?, ?)",
+        (day_id, day_name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    conn.execute(
+        """INSERT INTO workout_exercises
+           (workout_id, exercise_id, exercise_name, position, sets, reps, weight, note)
+           SELECT ?, id, name, position, sets, reps, weight, note
+           FROM exercises
+           WHERE day_id = ? AND active = 1""",
+        (cursor.lastrowid, day_id),
+    )
+
+
 def complete_workout(conn) -> None:
     day_count = conn.execute("SELECT COUNT(*) FROM workout_days").fetchone()[0]
     if day_count == 0:
@@ -229,7 +265,14 @@ def complete_workout(conn) -> None:
     row = conn.execute(
         "SELECT value FROM settings WHERE key = 'next_day_index'"
     ).fetchone()
-    current = int(row["value"]) if row else 0
+    current = (int(row["value"]) if row else 0) % day_count
+
+    day = conn.execute(
+        "SELECT id, name FROM workout_days ORDER BY position LIMIT 1 OFFSET ?",
+        (current,),
+    ).fetchone()
+    log_workout(conn, day["id"], day["name"])
+
     conn.execute(
         """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
