@@ -9,8 +9,10 @@ export type LiveData<T> = {
 
 // Loads data from the server and keeps it fresh: on start, when the window
 // regains focus, when the phone shows the page again, and every minute.
-// `load` must be defined outside any component, so it's the same function
-// on every render. Otherwise the effect would re-run on every render.
+// `load` must be the same function on every render: defined outside any
+// component, or wrapped in useCallback. Otherwise the effect would re-run on
+// every render. When it does change (useCallback with a new dependency), the
+// effect starts over and loads from the new function.
 export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
   const [data, setDataState] = useState<T | null>(null);
   const [error, setError] = useState(false);

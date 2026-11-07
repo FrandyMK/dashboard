@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import "./App.css";
-import { getGymPlan, loadCurrentMonth } from "./data";
+import { currentPeriod, getFinanceMonth, getGymPlan } from "./data";
 import FinanceView, { financePreview } from "./FinanceView";
 import GymView, { gymPreview } from "./GymView";
 import { useLiveData, type LiveData } from "./useLiveData";
@@ -30,7 +30,22 @@ function viewOf<T>(source: LiveData<T>, render: (data: T) => ReactNode): ReactNo
 function App() {
   const [openTile, setOpenTile] = useState<string | null>(null);
   const gym = useLiveData(getGymPlan);
-  const finance = useLiveData(loadCurrentMonth);
+
+  // The month shown in the finance tile. null means "the current month", asked
+  // for again on every refresh, so on the 1st the tile moves on by itself.
+  const [financePeriod, setFinancePeriod] = useState<string | null>(null);
+  const loadFinance = useCallback(
+    () => getFinanceMonth(financePeriod ?? currentPeriod()),
+    [financePeriod]
+  );
+  const finance = useLiveData(loadFinance);
+
+  // Closing a tile also brings finance back to the current month,
+  // so the grid's preview is always about now.
+  function closeTile() {
+    setOpenTile(null);
+    setFinancePeriod(null);
+  }
 
   const tiles: Tile[] = [
     {
@@ -45,7 +60,13 @@ function App() {
       title: "Finance",
       preview: previewOf(finance, financePreview),
       view: () =>
-        viewOf(finance, (month) => <FinanceView month={month} onChange={finance.setData} />),
+        viewOf(finance, (month) => (
+          <FinanceView
+            month={month}
+            onChange={finance.setData}
+            onPeriodChange={setFinancePeriod}
+          />
+        )),
     },
     { id: "habits", title: "Habits", preview: "4 / 6 done today" },
   ];
@@ -53,7 +74,7 @@ function App() {
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape" && openTile) {
-        setOpenTile(null);
+        closeTile();
       }
     }
 
@@ -65,7 +86,7 @@ function App() {
     const tile = tiles.find((t) => t.id === openTile)!;
     return (
       <main className="expanded">
-        <button className="back" onClick={() => setOpenTile(null)}>
+        <button className="back" onClick={closeTile}>
           ← Back
         </button>
         <h1>{tile.title}</h1>

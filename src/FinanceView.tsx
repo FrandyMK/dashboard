@@ -4,6 +4,7 @@ import {
   currentPeriod,
   markPaid,
   markUnpaid,
+  shiftPeriod,
   updateBill,
   type BillChanges,
   type FinanceMonth,
@@ -131,9 +132,11 @@ function BillForm({
 type Props = {
   month: FinanceMonth;
   onChange: (month: FinanceMonth) => void;
+  // null means "the current month".
+  onPeriodChange: (period: string | null) => void;
 };
 
-export default function FinanceView({ month, onChange }: Props) {
+export default function FinanceView({ month, onChange, onPeriodChange }: Props) {
   const [error, setError] = useState<string | null>(null);
   // The id of the bill being edited, if any. Only one at a time.
   const [editing, setEditing] = useState<string | null>(null);
@@ -236,7 +239,28 @@ export default function FinanceView({ month, onChange }: Props) {
 
   return (
     <div className="finance">
-      <h2>{monthTitle.format(new Date(year, monthNumber - 1, 1))}</h2>
+      <div className="month-nav">
+        <button
+          className="move"
+          title="Previous month"
+          onClick={() => onPeriodChange(shiftPeriod(period, -1))}
+        >
+          ‹
+        </button>
+        <h2>{monthTitle.format(new Date(year, monthNumber - 1, 1))}</h2>
+        <button
+          className="move"
+          title="Next month"
+          onClick={() => onPeriodChange(shiftPeriod(period, 1))}
+        >
+          ›
+        </button>
+        {period !== currentPeriod() && (
+          <button className="this-month" onClick={() => onPeriodChange(null)}>
+            This month
+          </button>
+        )}
+      </div>
       <p className="bill-summary">{financePreview(month)}</p>
       {error && <p className="error">{error}</p>}
 

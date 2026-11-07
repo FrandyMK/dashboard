@@ -133,6 +133,12 @@ export function currentPeriod(date: Date = new Date()): string {
   return `${date.getFullYear()}-${month}`;
 }
 
+// The period `months` away from `period`: shiftPeriod("2026-01", -1) is "2025-12".
+export function shiftPeriod(period: string, months: number): string {
+  const [year, month] = period.split("-").map(Number);
+  return currentPeriod(new Date(year, month - 1 + months, 1));
+}
+
 export function getFinanceMonth(period: string): Promise<FinanceMonth> {
   return request<FinanceMonth>(`/finance/months/${enc(period)}`);
 }
@@ -165,10 +171,4 @@ export function markUnpaid(period: string, billId: string): Promise<FinanceMonth
   return request<FinanceMonth>(`/finance/months/${enc(period)}/payments/${enc(billId)}`, {
     method: "DELETE",
   });
-}
-
-// The finance tile's loader. It asks for the month the device is in at the
-// moment of each refresh, so on the 1st the tile moves to the new month by itself.
-export function loadCurrentMonth(): Promise<FinanceMonth> {
-  return getFinanceMonth(currentPeriod());
 }

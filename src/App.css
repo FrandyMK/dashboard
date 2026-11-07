@@ -297,6 +297,41 @@ body {
 
 /* --- Finance --- */
 
+.month-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.month-nav h2 {
+  margin: 0;
+  /* Room for the longest month name, so the › button doesn't jump around. */
+  min-width: 11rem;
+  text-align: center;
+}
+
+/* The arrows sit on the page background here, not on a tile. */
+.month-nav .move,
+.month-nav .this-month {
+  background: var(--tile-bg);
+}
+
+.this-month {
+  color: var(--text);
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.month-nav .move:hover,
+.this-month:hover {
+  background: #3b4261;
+}
+
 .bill-summary {
   color: var(--muted);
 }
