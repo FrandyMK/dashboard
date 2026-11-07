@@ -153,6 +153,20 @@ def delete_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
 
 # Serve the built frontend, if present (it is inside Docker, not in local dev).
 # Must come last: API routes above take priority over this catch-all.
+class FrontendFiles(StaticFiles):
+    # Vite puts a hash of each file's contents in its name under assets/, so a
+    # new build means new names: those files can be cached forever. Everything
+    # else (index.html above all) must be checked with the server on every
+    # visit, or the phone keeps showing an old version.
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
+    app.mount("/", FrontendFiles(directory=STATIC_DIR, html=True), name="frontend")
