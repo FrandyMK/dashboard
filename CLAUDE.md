@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** add screenshots to the README, then the to-do tile. See the "Next step" section.
+**Next step:** bring the README up to date with month switching, add screenshots, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -89,11 +89,11 @@ dashboard/
 - `request()` queues non-GET requests through `previousChange` so they're sent one at a time; `send()` does the actual fetch.
 - Gym: types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`; functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `completeWorkout`. Each returns the full updated `GymPlan`.
 - Finance: types `Payment`, `MonthBill`, `Bill`, `FinanceMonth`, `NewBill`, `BillChanges`; functions `getFinanceMonth`, `addBill`, `updateBill`, `markPaid`, `markUnpaid`. Each takes the `period` being viewed and returns that `FinanceMonth`.
-- `currentPeriod()` gives the device's current month as `"2026-11"` in **local** time. `loadCurrentMonth()` is the finance tile's loader and calls `currentPeriod()` on every refresh, so the tile rolls over to a new month by itself.
+- `currentPeriod()` gives the device's current month as `"2026-11"` in **local** time. `shiftPeriod(period, months)` moves a period forward or back (`shiftPeriod("2026-01", -1)` is `"2025-12"`); it builds `new Date(year, month - 1 + months, 1)`, which handles the year overflow, and formats it with `currentPeriod`. (`loadCurrentMonth()` is gone; the loader now lives in `App`.)
 
 **`useLiveData.ts`** (the data source part of a tile)
 - `useLiveData(load)` returns `{ data, error, setData }`. It refreshes on load, on window focus, on `visibilitychange` (for the phone) and every 60 seconds, with cleanup.
-- `load` must be a stable function defined outside any component (e.g. `getGymPlan`, `loadCurrentMonth`). An inline arrow would re-run the effect on every render and cause an endless request loop.
+- `load` must be the same function on every render: defined outside any component (e.g. `getGymPlan`) or wrapped in `useCallback` (the finance loader). An inline arrow would re-run the effect on every render and cause an endless request loop. When a `useCallback` dependency changes, the effect deliberately starts over with the new loader; the stale-refresh guard drops any answer still in flight for the old one.
 - Stale-refresh guard: a `latest` counter (`useRef`) goes up when a refresh starts and when `setData` is called with a mutation's response. A refresh only applies its answer if nothing newer happened since it started, so a slow background refresh can't undo a change you just made. `setData` also clears the error flag, since the server just answered.
 - Out-of-order changes can't happen either: `request()` in `data.ts` sends changes (anything not GET) one at a time, each waiting for the previous answer. A failed change doesn't block the queue. The more general alternative, a server-side version number in every response, was considered and left for if it's ever needed.
 
@@ -102,7 +102,8 @@ dashboard/
 - `previewOf(source, describe)` and `viewOf(source, render)` handle the loading/error states for every tile.
 - Data hooks live in `App` (not inside each tile) so data survives opening and closing tiles.
 - `tiles`: `gym` and `finance` are real; `todo` and `habits` are placeholders. Adding a tile = one `useLiveData` line + one array entry.
-- `openTile` state switches between the grid and an expanded view. Escape closes a tile (`useEffect` with `[openTile]`).
+- Finance month: `financePeriod` state (`string | null`; `null` = the current month, re-read with `currentPeriod()` on every refresh, so the tile still rolls over on the 1st). The loader is `useCallback(() => getFinanceMonth(financePeriod ?? currentPeriod()), [financePeriod])`. `FinanceView` gets `setFinancePeriod` as `onPeriodChange`. It lives in `App`, next to the data hook, because the hook needs it.
+- `openTile` state switches between the grid and an expanded view. Escape and ← Back both call `closeTile()`, which also resets `financePeriod` to `null`, so the grid preview is always about the current month.
 
 **`GymView.tsx`**
 - Exports `gymPreview(plan)` (next day and its first active exercise) alongside the component. Because the file exports a non-component, Vite does a full page reload instead of Fast Refresh when it changes during development. Harmless. Same for `FinanceView.tsx`.
@@ -116,6 +117,7 @@ dashboard/
 
 **`FinanceView.tsx`**
 - `financePreview(month)`: "4 of 7 paid · € 420,00 still due", "All 7 paid this month", or "No bills yet".
+- Month navigation: `‹ Month Year ›` (`.month-nav`), plus a "This month" button when another month is shown. The arrows step from `month.period` (the month on screen), not from the requested month, so tapping twice before the next month loads never skips a month you haven't seen. Past and future months both work; ticking in a future month pays ahead.
 - Shows the month name, the summary, and the month's bills (ordered on the server: unpaid by due day first, then paid ones in the order they were ticked, so ticking a bill moves it to the bottom). Each row: a checkbox inside a `<label>` (tapping the name ticks it), "Due 15 Oct" or "Paid 27 Oct", the amount, and ✎. A paid row shows the payment's stored amount, not the bill's current one.
 - Every action uses `month.period` (the month on screen), never `currentPeriod()`.
 - Overdue (unpaid and past its due date) shows the due date in red. A bill due on the 31st falls on the last day of shorter months (`new Date(year, month, 0)` trick).
@@ -133,7 +135,7 @@ dashboard/
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
 - Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid. The note input (`.ex-note`) uses `grid-column: 1 / -1`, so it wraps onto its own full-width line under the row.
 - On the desktop `.ex-details` and `.ex-details-inner` are `display: contents`, so their children are cells of the row grid as before. In the HTML, delete and note now come before ▲▼ and +/−, so `.ex-delete` and `.ex-note` get `order: 1` to put them back at the end of the row.
-- Finance section: bill rows are a 4-column grid (`1fr auto 7rem 2rem`: name, due, amount, ✎). `.bill-form` is a grid shared by the add and edit forms; a local CSS variable `--field-bg` switches field colours between the two (page background vs. on a tile). `.bill.editing { display: block }` turns off the row grid while editing.
+- Finance section: bill rows are a 4-column grid (`1fr auto 7rem 2rem`: name, due, amount, ✎). `.bill-form` is a grid shared by the add and edit forms; a local CSS variable `--field-bg` switches field colours between the two (page background vs. on a tile). `.bill.editing { display: block }` turns off the row grid while editing. `.month-nav` is a wrapping flex row; its buttons get `--tile-bg` because they sit on the page background, and the `h2` has a `min-width` so › doesn't move between month names.
 - `@media (max-width: 640px)`: tiles stack in one column, exercise rows become collapsible cards (`"name order toggle" / "details details details"`; inside the details `"sets reps weight delete" / "note note note note"`). The slide is `grid-template-rows: 0fr → 1fr` on `.ex-details` with a 200ms transition, because `height: auto` can't be animated; the inner box has `min-height: 0; overflow: hidden`, and `visibility: hidden` when closed so its inputs can't take focus or taps (visibility only switches off at the end of the closing transition). bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
 
 ### Backend details
@@ -146,19 +148,19 @@ dashboard/
 - Path from env var `DASHBOARD_DB`, defaulting to `dashboard.db`. In Docker: `/data/dashboard.db`.
 - `connect()` is a context manager: commits on success, rolls back on any exception, always closes.
 - `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and seeds an empty database.
-- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` checks `PRAGMA table_info(exercises)` and runs `ALTER TABLE ... ADD COLUMN note` if it's missing. Safe on every startup. Future columns on existing tables need the same treatment.
+- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` checks `PRAGMA table_info(...)` and adds what's missing: `exercises.note`, and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
 - The note is `''` when empty, never `NULL`: clearing a note sends `""`, which survives the PATCH route's `exclude_none=True` (a `None` would mean "not changing this field").
 - Tables:
   - `workout_days (id, name, position)`
   - `exercises (id, day_id, name, weight REAL, sets, reps, position, active, note TEXT NOT NULL DEFAULT '', PRIMARY KEY (day_id, id))`
   - `settings (key, value)`, which holds `next_day_index`
-  - `bills (id, name, amount_cents, due_day, position, active)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day.
+  - `bills (id, name, amount_cents, due_day, position, active, start_period)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day. `start_period` (`"YYYY-MM"`) is the first month the bill appears in; `add_bill` sets it to the period the client was viewing, so adding a bill while looking at December schedules it from December.
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
   - `workouts (id INTEGER PRIMARY KEY, day_id, day_name, completed_at)`: one row per completed session. `completed_at` is a UTC ISO timestamp.
   - `workout_exercises (workout_id REFERENCES workouts, exercise_id, exercise_name, position, sets, reps, weight REAL, note, PRIMARY KEY (workout_id, exercise_id))`, plus index `workout_exercises_by_exercise (exercise_id)` for future per-exercise history queries. **No foreign key to `exercises`** and the name is copied, so renaming or deleting an exercise never blocks or rewrites history.
 - `complete_workout` finds the current day (`ORDER BY position LIMIT 1 OFFSET ?`, index taken `% day_count`), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then advances `next_day_index`. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
 - Money is integer cents everywhere, including the API.
-- `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills plus any deactivated bill paid that month, ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
+- `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills whose `start_period <= period` plus any bill paid that month (a payment always shows, even before the start or after deactivation), ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
 - `mark_paid` uses `INSERT ... ON CONFLICT (bill_id, period) DO NOTHING`, so marking twice keeps the first payment and timestamp. `mark_unpaid` deletes the row; unpaying an unpaid bill isn't an error. Both return `False` (→ 404) only when the bill doesn't exist.
 - `update_bill` follows the `update_exercise` pattern with its own `BILL_EDITABLE_COLUMNS` whitelist. Bills are never deleted, only deactivated (foreign keys would block deleting a bill with payments anyway).
 - `?` placeholders everywhere. The dynamic `SET` clause in `update_exercise` only takes column names from a fixed `EDITABLE_COLUMNS` set.
@@ -175,7 +177,7 @@ dashboard/
 | PUT | `/gym/days/{day_id}/order` | New order; must list every exercise of the day exactly once |
 | POST | `/gym/complete` | Log today's active exercises as a workout, then advance to the next day |
 | GET | `/finance/months/{period}` | Bills for that month with their payment (or `null`), plus `inactive` |
-| POST | `/finance/bills?period=` | Add a bill (name, amountCents ≥ 0, dueDay 1–31) |
+| POST | `/finance/bills?period=` | Add a bill (name, amountCents ≥ 0, dueDay 1–31), starting in `period` |
 | PATCH | `/finance/bills/{bill_id}?period=` | Change any of name, amountCents, dueDay, active |
 | PUT | `/finance/months/{period}/payments/{bill_id}` | Mark paid (idempotent; copies the bill's current amount) |
 | DELETE | `/finance/months/{period}/payments/{bill_id}` | Mark unpaid (idempotent) |
@@ -216,7 +218,11 @@ hl.window_rule({
 
 - `fetch` has no timeout, and changes are queued one at a time. With bad signal (the gym), one hanging change blocks every change after it until the browser gives up. Fix when it matters: `signal: AbortSignal.timeout(10_000)` in `send()`. Relevant again for the offline/PWA work.
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
-- Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
+- A bill's start month can't be changed in the UI. A bill added while viewing the wrong month needs `UPDATE bills SET start_period = ...` by hand.
+- Deactivating a bill removes it from every month it wasn't paid in, including past ones (there's no `end_period`).
+- In a month other than the current one, the summary still says "All 9 paid this month".
+- The README is behind on month switching: line ~190 (Limitations) still says "Finance shows only the current month", and the roadmap (line ~203) lists switching months as not done. Features (line ~26) could mention it.
+- Not confirmed: whether the desktop app was rebuilt (`npm run tauri build -- --no-bundle`) after the month-switching deploy, and how the month bar looks on the phone.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
 - Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
 - Pressing "Complete workout" without training logs a fake session, and double-tapping it logs two (and skips a day, as before). There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
@@ -230,10 +236,10 @@ hl.window_rule({
 
 ## Roadmap
 
-1. README screenshots (next, see below)
+1. README: month switching, plus screenshots (next, see below)
 2. To-do tile
 3. Habit tracker tile
-4. Finance extras: switching between months, a custom amount when marking paid
+4. Finance extras: a custom amount when marking paid; maybe editing a bill's start month
 5. Gym progression: the log is done and collecting data. Still to do, when wanted: a history endpoint (e.g. `GET /gym/days/{day_id}/exercises/{exercise_id}/history`, oldest first), a small SVG weight-over-time chart in the opened card, and maybe a one-off backfill from old backup snapshots. Not wanted yet (2026-11-07): for now it's enough that the data is stored and backed up
 6. PWA / offline support for the phone, queuing changes when there's no signal at the gym
 7. Follow the active Omarchy theme colours automatically
@@ -241,8 +247,9 @@ hl.window_rule({
 
 ## Next step: finish the README
 
-The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. One thing is missing:
+The README was rewritten on 2026-11-07 (architecture, design decisions, local setup, deployment, backups, limitations, roadmap) and updated the same evening for the collapsible phone cards and the workout log. Two things are missing:
 
+- **Month switching.** Update Features (line ~26), drop "Finance shows only the current month" from Limitations (line ~190, keep the sentence about the paid amount), tick "switch between months" in the roadmap (line ~203, keep "custom amount" open), and consider a short design-decision paragraph on `start_period` (why bills need a start month, and that adding while viewing a month schedules it from that month).
 - **Screenshots.** An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
@@ -250,6 +257,10 @@ After that: the to-do tile (roadmap item 2).
 ## Session log
 
 (newest first)
+
+**2026-11-07 (night)**
+- Finance month switching (`8c0913a`): `‹ ›` arrows and "This month". The month lives in `App` as `financePeriod` (`null` = current, so the 1st still rolls over), the loader is a `useCallback`, and closing the tile resets it. Confirmed beforehand that October's 9 payments were intact in the PC backup: rows in `payments` are never cleared when a month ends.
+- Bills got a `start_period` (`edb97ce`), because otherwise every bill added in November showed as unpaid and overdue in October. Adding a bill while viewing a month starts it there, which is also how you schedule ahead. Migration backfills from the first paid month. Tested on a copy of the 2026-11-07 snapshot (Oct: 9 paid; Pwn and Kpn - Persoonlijk start in Nov), pushed and deployed on the homelab; October shows correctly there.
 
 **2026-11-07 (evening)**
 - Phone gym cards are now collapsible: a closed card shows the name, a faded "3 × 8 · 80 kg" summary, ▲▼ and +/−; tapping the name slides open sets/reps/weight/note/delete (one at a time). Done with wrappers that are `display: contents` on the desktop, so the desktop row is unchanged. Committed as `220fa4f`.
