@@ -6,11 +6,11 @@ import {
   deleteDay,
   deleteExercise,
   reorderExercises,
-  selectDay,
   updateExercise,
   type Exercise,
   type ExerciseChanges,
   type GymPlan,
+  type WorkoutDay,
 } from "./data";
 
 // The one-line summary shown on the gym tile.
@@ -25,6 +25,12 @@ export function gymPreview(plan: GymPlan): string {
 type Props = {
   plan: GymPlan;
   onChange: (plan: GymPlan) => void;
+};
+
+type DayProps = {
+  day: WorkoutDay;
+  onChange: (plan: GymPlan) => void;
+  onBack: () => void;
 };
 
 // A number input that only saves when you're done typing (Enter or
@@ -118,26 +124,28 @@ function NoteField({
   );
 }
 
-export default function GymView({ plan, onChange }: Props) {
+// One day opened from the days screen: today's workout and that day's pool.
+function DayView({ day, onChange, onBack }: DayProps) {
   const [newName, setNewName] = useState("");
-  const [newDayName, setNewDayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Deleting takes two clicks: the first arms the button, the second deletes.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   // On the phone, one exercise at a time shows its fields; the rest show only their name.
   const [openExercise, setOpenExercise] = useState<string | null>(null);
 
-  const day = plan.days[plan.nextDayIndex];
   const inWorkout = day.exercises.filter((ex) => ex.active);
   const available = day.exercises.filter((ex) => !ex.active);
 
   // Every change goes to the server; its answer becomes the new plan.
-  async function run(action: () => Promise<GymPlan>) {
+  // Returns whether it worked, so Complete only goes back on success.
+  async function run(action: () => Promise<GymPlan>): Promise<boolean> {
     try {
       onChange(await action());
       setError(null);
+      return true;
     } catch (err) {
       setError(String(err));
+      return false;
     }
   }
 
@@ -157,16 +165,8 @@ export default function GymView({ plan, onChange }: Props) {
     run(() => deleteExercise(day.id, id));
   }
 
-  function addNewDay() {
-    const name = newDayName.trim();
-    if (!name) return;
-    setNewDayName("");
-    run(() => addDay(name));
-  }
-
-  function removeDay(id: string) {
-    setConfirmDelete(null);
-    run(() => deleteDay(id));
+  async function complete() {
+    if (await run(() => completeWorkout(day.id))) onBack();
   }
 
   function move(id: string, direction: -1 | 1) {
@@ -287,6 +287,9 @@ export default function GymView({ plan, onChange }: Props) {
 
   return (
     <div className="gym">
+      <button className="back" onClick={onBack}>
+        ‹ All days
+      </button>
       <h2>{day.name}</h2>
       {error && <p className="error">{error}</p>}
 
@@ -300,7 +303,7 @@ export default function GymView({ plan, onChange }: Props) {
         </ul>
       )}
 
-      <details className="pool" key={day.id}>
+      <details className="pool">
         <summary className="section-title">
           All {day.name.toLowerCase()} exercises ({available.length})
         </summary>
@@ -323,24 +326,72 @@ export default function GymView({ plan, onChange }: Props) {
       </details>
 
       <div className="gym-actions">
-        <button onClick={() => run(completeWorkout)}>Complete workout →</button>
+        <button onClick={complete}>Complete workout ✓</button>
       </div>
+    </div>
+  );
+}
 
-      <details className="days">
-        <summary className="section-title">Workout days ({plan.days.length})</summary>
-        <ul className="day-list">
-          {plan.days.map((d, i) => (
-            <li key={d.id} className="day-row">
-              <button
-                className="day-name"
-                title={i === plan.nextDayIndex ? "This is the next workout" : `Switch to ${d.name}`}
-                disabled={i === plan.nextDayIndex}
-                onClick={() => run(() => selectDay(d.id))}
-              >
-                {d.name}
-                {i === plan.nextDayIndex && <span className="day-next"> · next</span>}
+// The first screen of the gym tile: every day in the rotation.
+// Tapping one opens it; the next day in the rotation is marked.
+export default function GymView({ plan, onChange }: Props) {
+  // The day that's open, or null for the days screen.
+  const [openDayId, setOpenDayId] = useState<string | null>(null);
+  const [newDayName, setNewDayName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // If the open day was deleted (e.g. on another device), fall back to the list.
+  const openDay = plan.days.find((d) => d.id === openDayId);
+  if (openDay) {
+    return (
+      <DayView
+        key={openDay.id}
+        day={openDay}
+        onChange={onChange}
+        onBack={() => setOpenDayId(null)}
+      />
+    );
+  }
+
+  async function run(action: () => Promise<GymPlan>) {
+    try {
+      onChange(await action());
+      setError(null);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  function addNewDay() {
+    const name = newDayName.trim();
+    if (!name) return;
+    setNewDayName("");
+    run(() => addDay(name));
+  }
+
+  function removeDay(id: string) {
+    setConfirmDelete(null);
+    run(() => deleteDay(id));
+  }
+
+  return (
+    <div className="gym">
+      {error && <p className="error">{error}</p>}
+      <ul className="day-list">
+        {plan.days.map((d, i) => {
+          const active = d.exercises.filter((ex) => ex.active).length;
+          return (
+            <li key={d.id} className={i === plan.nextDayIndex ? "day-row next" : "day-row"}>
+              <button className="day-open" onClick={() => setOpenDayId(d.id)}>
+                <span className="day-name">
+                  {d.name}
+                  {i === plan.nextDayIndex && <span className="day-next">Next</span>}
+                </span>
+                <span className="day-count">
+                  {active} in workout · {d.exercises.length} in pool
+                </span>
               </button>
-              <span className="day-count">{d.exercises.length} exercises</span>
               {plan.days.length > 1 && (
                 <button
                   className={confirmDelete === d.id ? "move delete confirming" : "move delete"}
@@ -357,19 +408,19 @@ export default function GymView({ plan, onChange }: Props) {
                 </button>
               )}
             </li>
-          ))}
-        </ul>
+          );
+        })}
+      </ul>
 
-        <div className="add-exercise">
-          <input
-            placeholder="New day name, e.g. Calisthenics day"
-            value={newDayName}
-            onChange={(e) => setNewDayName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addNewDay()}
-          />
-          <button onClick={addNewDay}>+ Add day</button>
-        </div>
-      </details>
+      <div className="add-exercise">
+        <input
+          placeholder="New day name, e.g. Calisthenics day"
+          value={newDayName}
+          onChange={(e) => setNewDayName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addNewDay()}
+        />
+        <button onClick={addNewDay}>+ Add day</button>
+      </div>
     </div>
   );
 }

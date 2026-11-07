@@ -47,8 +47,9 @@ class NewDay(CamelModel):
     name: str = Field(min_length=1, max_length=100)
 
 
-class DaySelection(CamelModel):
-    day_id: str
+class CompletedWorkout(CamelModel):
+    # Which day was done. Left out by older clients: then it's the next day.
+    day_id: str | None = None
 
 
 class ExerciseOrder(CamelModel):

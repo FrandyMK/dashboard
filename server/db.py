@@ -300,22 +300,6 @@ def delete_day(conn, day_id: str) -> str | None:
     return None
 
 
-def select_day(conn, day_id: str) -> bool:
-    # Makes this day the next workout, without logging anything.
-    days = [
-        row["id"]
-        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
-    ]
-    if day_id not in days:
-        return False
-    conn.execute(
-        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-        (str(days.index(day_id)),),
-    )
-    return True
-
-
 def log_workout(conn, day_id: str, day_name: str) -> None:
     # A snapshot of what was done today. Later changes to the plan
     # (weights, names, deleting an exercise) never rewrite these rows.
@@ -333,26 +317,35 @@ def log_workout(conn, day_id: str, day_name: str) -> None:
     )
 
 
-def complete_workout(conn) -> None:
-    day_count = conn.execute("SELECT COUNT(*) FROM workout_days").fetchone()[0]
-    if day_count == 0:
-        return
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key = 'next_day_index'"
-    ).fetchone()
-    current = (int(row["value"]) if row else 0) % day_count
+def complete_workout(conn, day_id: str | None = None) -> bool:
+    # Logs the given day (or, without one, the next day in the rotation)
+    # and makes the day after it the next one. False if the day doesn't exist.
+    days = conn.execute(
+        "SELECT id, name FROM workout_days ORDER BY position"
+    ).fetchall()
+    if not days:
+        return False
 
-    day = conn.execute(
-        "SELECT id, name FROM workout_days ORDER BY position LIMIT 1 OFFSET ?",
-        (current,),
-    ).fetchone()
+    if day_id is None:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'next_day_index'"
+        ).fetchone()
+        current = (int(row["value"]) if row else 0) % len(days)
+    else:
+        ids = [d["id"] for d in days]
+        if day_id not in ids:
+            return False
+        current = ids.index(day_id)
+
+    day = days[current]
     log_workout(conn, day["id"], day["name"])
 
     conn.execute(
         """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-        (str((current + 1) % day_count),),
+        (str((current + 1) % len(days)),),
     )
+    return True
 
 
 # --- Finance ---

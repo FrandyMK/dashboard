@@ -20,14 +20,13 @@ from db import (
     mark_paid,
     mark_unpaid,
     reorder_exercises,
-    select_day,
     update_bill,
     update_exercise,
 )
 from models import (
     PERIOD_PATTERN,
     BillUpdate,
-    DaySelection,
+    CompletedWorkout,
     ExerciseOrder,
     ExerciseUpdate,
     FinanceMonth,
@@ -89,14 +88,6 @@ def remove_day(day_id: str) -> GymPlan:
         return load_plan(conn)
 
 
-@app.put("/gym/next-day")
-def put_next_day(selection: DaySelection) -> GymPlan:
-    with connect() as conn:
-        if not select_day(conn, selection.day_id):
-            raise HTTPException(status_code=404, detail="Day not found")
-        return load_plan(conn)
-
-
 @app.patch("/gym/days/{day_id}/exercises/{exercise_id}")
 def patch_exercise(day_id: str, exercise_id: str, update: ExerciseUpdate) -> GymPlan:
     with connect() as conn:
@@ -134,9 +125,11 @@ def put_order(day_id: str, order: ExerciseOrder) -> GymPlan:
 
 
 @app.post("/gym/complete")
-def post_complete() -> GymPlan:
+def post_complete(completed: CompletedWorkout | None = None) -> GymPlan:
     with connect() as conn:
-        complete_workout(conn)
+        day_id = completed.day_id if completed else None
+        if not complete_workout(conn, day_id):
+            raise HTTPException(status_code=404, detail="Day not found")
         return load_plan(conn)
 
 

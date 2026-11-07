@@ -242,45 +242,66 @@ body {
   font: inherit;
 }
 
-.days {
-  margin-top: 1.5rem;
-}
-
 .day-list {
   list-style: none;
   padding: 0;
   margin: 0.5rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .day-row {
   display: grid;
-  grid-template-columns: 1fr auto 2rem;
+  grid-template-columns: 1fr 2rem;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.4rem 0;
 }
 
-.day-name {
-  background: none;
-  border: none;
+.day-open {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--tile-bg);
   color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
   font: inherit;
   text-align: left;
-  padding: 0.25rem 0;
   cursor: pointer;
 }
 
-.day-name:hover:not(:disabled) {
-  text-decoration: underline;
+.day-open:hover {
+  background: #2f3549;
 }
 
-.day-name:disabled {
-  cursor: default;
+.day-row.next .day-open {
+  border-color: #3b4261;
 }
 
-.day-next,
+.day-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.day-next {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bg);
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+}
+
 .day-count {
   color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .reorder {
@@ -492,8 +513,7 @@ body {
 }
 
 .inactive-bills summary,
-.pool summary,
-.days summary {
+.pool summary {
   cursor: pointer;
 }
 
