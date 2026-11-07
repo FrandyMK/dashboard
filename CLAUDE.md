@@ -1,6 +1,6 @@
 # Dashboard project — handoff summary
 
-Context for continuing this project in a new chat. Written at the end of the previous chat (October 2026).
+Context for continuing this project in a new chat. Written at the end of the previous chat (November 2026).
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
@@ -67,7 +67,7 @@ dashboard/
 │   └── App.css               All styling, including the mobile layout
 ├── src-tauri/                Tauri shell (desktop window only)
 ├── server/                   Python backend
-│   ├── main.py               FastAPI app, routes, CORS, serves the built frontend
+│   ├── main.py               FastAPI app, routes, CORS, serves the built frontend (with cache headers)
 │   ├── db.py                 SQLite connection, schema, seed data, queries
 │   ├── models.py             Pydantic models (camelCase JSON via alias generator)
 │   ├── backup.py             Safe database snapshot, run nightly inside the container
@@ -107,6 +107,7 @@ dashboard/
 - Exports `gymPreview(plan)` (next day and its first active exercise) alongside the component. Because the file exports a non-component, Vite does a full page reload instead of Fast Refresh when it changes during development. Harmless. Same for `FinanceView.tsx`.
 - Receives `plan` and `onChange`. Every action calls the API through `run()`, and the server's response becomes the new state. No draft, no Save button.
 - `NumberField`: holds its own text while focused and only saves on blur or Enter, so typing doesn't send a request per keystroke and background refreshes can't overwrite what's being typed. Uses `inputMode="decimal"`.
+- `NoteField`: a one-line note under each exercise (e.g. "straight back next time"), built the same way as `NumberField`. Enter or clicking away saves (trimmed, only if changed); Escape cancels and uses `stopPropagation()` so it doesn't close the tile. Escape also blurs the input, which would normally save, so a `cancelled` ref tells that blur to skip. It's a ref, not state, because nothing has to re-render. Empty notes show as a faint "Add a note…". One current note per exercise, overwritten like the weight, not a history.
 - Two sections: "Today's workout" (active exercises) and the full pool for that day. Sets, reps and weight are editable in both. Exercises can be reordered within each section (▲▼) and moved between sections (+/−). New exercises can be added to the pool.
 - Exercises in the pool (not in today's workout) can be deleted with ✕. It takes two clicks: the first arms the button (red ✓), the second deletes. Moving the mouse away or tapping elsewhere disarms it (`confirmDelete` state, reset on `onMouseLeave` and `onBlur`).
 - "Complete workout" advances the push → pull → legs rotation.
@@ -128,9 +129,9 @@ dashboard/
 
 **`App.css`**
 - Theme tokens on `:root`: `--bg #1a1b26`, `--tile-bg #24283b`, `--text #c0caf5`, `--muted #7f87b0`.
-- Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid.
+- Exercise rows use an 8-column grid with **fixed widths** (`1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem`): name, sets, reps, weight, unit, ▲▼, +/−, delete. Auto widths broke header alignment, because each row is its own grid. The note input (`.ex-note`) uses `grid-column: 1 / -1`, so it wraps onto its own full-width line under the row.
 - Finance section: bill rows are a 4-column grid (`1fr auto 7rem 2rem`: name, due, amount, ✎). `.bill-form` is a grid shared by the add and edit forms; a local CSS variable `--field-bg` switches field colours between the two (page background vs. on a tile). `.bill.editing { display: block }` turns off the row grid while editing.
-- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become cards via `grid-template-areas` (bottom row: `order delete toggle`), bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
+- `@media (max-width: 640px)`: tiles stack in one column, exercise rows become cards via `grid-template-areas` (`order delete toggle`, then `note note note`), bill rows become cards (`"main amount action" / "due due due"`), labels appear above inputs, inputs are 16px (stops iOS zooming), tap targets 2.75rem.
 
 ### Backend details
 
@@ -141,10 +142,12 @@ dashboard/
 **Database** (`db.py`)
 - Path from env var `DASHBOARD_DB`, defaulting to `dashboard.db`. In Docker: `/data/dashboard.db`.
 - `connect()` is a context manager: commits on success, rolls back on any exception, always closes.
-- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing and seeds an empty database.
+- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and seeds an empty database.
+- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` checks `PRAGMA table_info(exercises)` and runs `ALTER TABLE ... ADD COLUMN note` if it's missing. Safe on every startup. Future columns on existing tables need the same treatment.
+- The note is `''` when empty, never `NULL`: clearing a note sends `""`, which survives the PATCH route's `exclude_none=True` (a `None` would mean "not changing this field").
 - Tables:
   - `workout_days (id, name, position)`
-  - `exercises (id, day_id, name, weight REAL, sets, reps, position, active, PRIMARY KEY (day_id, id))`
+  - `exercises (id, day_id, name, weight REAL, sets, reps, position, active, note TEXT NOT NULL DEFAULT '', PRIMARY KEY (day_id, id))`
   - `settings (key, value)`, which holds `next_day_index`
   - `bills (id, name, amount_cents, due_day, position, active)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day.
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
@@ -160,7 +163,7 @@ dashboard/
 |---|---|---|
 | GET | `/health` | Health check |
 | GET | `/gym/plan` | Full plan |
-| PATCH | `/gym/days/{day_id}/exercises/{exercise_id}` | Change any of name, weight, sets, reps, active |
+| PATCH | `/gym/days/{day_id}/exercises/{exercise_id}` | Change any of name, weight, sets, reps, active, note |
 | POST | `/gym/days/{day_id}/exercises` | Add an exercise to the pool |
 | DELETE | `/gym/days/{day_id}/exercises/{exercise_id}` | Delete an exercise (404 if it doesn't exist) |
 | PUT | `/gym/days/{day_id}/order` | New order; must list every exercise of the day exactly once |
@@ -171,12 +174,12 @@ dashboard/
 | PUT | `/finance/months/{period}/payments/{bill_id}` | Mark paid (idempotent; copies the bill's current amount) |
 | DELETE | `/finance/months/{period}/payments/{bill_id}` | Mark unpaid (idempotent) |
 
-- Validation in Pydantic (`weight >= 0`, `sets >= 1`, `reps >= 1`, name not empty; for bills `amount_cents >= 0`, `due_day` 1–31) gives automatic 422 errors.
+- Validation in Pydantic (`weight >= 0`, `sets >= 1`, `reps >= 1`, name not empty, note at most 500 characters and allowed to be empty; for bills `amount_cents >= 0`, `due_day` 1–31) gives automatic 422 errors.
 - `period` is validated with `PERIOD_PATTERN` (`^\d{4}-(0[1-9]|1[0-2])$`) through reusable `Annotated` types, `PeriodInPath` and `PeriodInQuery`. FastAPI's `Path` is imported as `PathParam` because `main.py` already imports `pathlib.Path`.
 - **The client chooses the month**, not the server. The container runs in UTC, so the server's "today" would reach the next month an hour late (two in summer). Each device sends its own local month instead.
 - Per-change endpoints were chosen deliberately, so two devices editing different exercises never overwrite each other.
 - CORS allows `http://localhost:1420`, `tauri://localhost` and `http://tauri.localhost` (the desktop). The phone needs no CORS because the page and API share an address.
-- The built frontend is mounted with `StaticFiles` at `/`, as the **last** thing in `main.py`, only if `server/static/` exists.
+- The built frontend is mounted at `/`, as the **last** thing in `main.py`, only if `server/static/` exists. It uses `FrontendFiles`, a `StaticFiles` subclass that adds `Cache-Control`: files under `assets/` get `public, max-age=31536000, immutable` (Vite puts a content hash in their names, so a new build means new names), and everything else, mainly `index.html`, gets `no-cache` (the browser keeps it but checks with the server each time, usually getting a `304`). Without this the phone's home-screen app kept showing an old `index.html` after a deploy.
 
 ### Deployment
 
@@ -184,7 +187,7 @@ dashboard/
 - **Compose:** `restart: unless-stopped`, volume `./data:/data`, ports `"${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"`. The homelab's `server/.env` (gitignored, machine-specific) sets `BIND_ADDRESS` to its Tailscale IP and `API_PORT=8010`; without a `.env` (e.g. on the PC) it falls back to `127.0.0.1:8000`. Nothing on the homelab is edited outside the repo, so `git pull` there stays clean.
 - **Updating the phone version or the API:** commit and push on the PC, then on the homelab: `cd ~/dashboard/server && git pull && docker compose up -d --build`.
 - **Updating the desktop app:** `npm run tauri build -- --no-bundle` on the PC, then restart the app. The binary is at `src-tauri/target/release/dashboard`.
-- Local development: `npm run tauri dev` for the frontend, and `uv run fastapi dev main.py` in `server/` for a local API on port 8000 (then point `.env` at localhost).
+- Local development: `uv run fastapi dev main.py` in `server/` for a local API on port 8000 (uses `server/dashboard.db` on the PC, not homelab data), and `VITE_API_URL=http://localhost:8000 npm run tauri dev` in the repo root. A variable set in the shell beats the one in `.env`, so the file never has to be edited or changed back.
 
 **Window rule** in `~/.config/hypr/input.lua`:
 ```lua
@@ -210,6 +213,7 @@ hl.window_rule({
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - Finance has no month switching in the UI yet, though the API already serves any period. When it's added: a bill created later will show as unpaid in earlier months (the month view doesn't know when a bill started), and that's worth handling or documenting.
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
+- Notes are one current note per exercise. A per-workout note history would belong with the progression-history roadmap item.
 - The Tauri template's leftover `greet` command is still in `src-tauri/src/lib.rs`.
 - No authentication on the API. Acceptable while only my own devices are on the tailnet; reconsider before sharing access with anyone.
 - The phone page needs a network connection. No offline support or proper PWA manifest yet.
@@ -232,15 +236,20 @@ hl.window_rule({
 
 The README is the first thing anyone sees on GitHub, and it still describes the old local-only version. Rewrite it to cover:
 
-- What the dashboard is, with screenshots of the grid, the gym tile and the finance tile (desktop and phone).
+- What the dashboard is, with screenshots of the grid, the gym tile (including exercise notes) and the finance tile (desktop and phone).
 - The architecture: one React codebase in two places (Tauri on the desktop, the browser on the phone), one FastAPI + SQLite server on the homelab over Tailscale, the server as the single source of truth.
 - How to run it locally and how it's deployed (Docker, compose, the `.env` values), plus backups and the tested restore.
-- The design decisions worth explaining, each in a sentence or two: per-change endpoints instead of saving a whole document; server responses replace client state; integer cents; bills separate from payments (history for free, payment amount as a snapshot); the client choosing the month (timezones); idempotent PUT/DELETE for paid/unpaid; the tile pattern and `useLiveData`, including the stale-refresh guard and the one-at-a-time change queue; deactivate instead of delete.
+- The design decisions worth explaining, each in a sentence or two: per-change endpoints instead of saving a whole document; server responses replace client state; integer cents; bills separate from payments (history for free, payment amount as a snapshot); the client choosing the month (timezones); idempotent PUT/DELETE for paid/unpaid; the tile pattern and `useLiveData`, including the stale-refresh guard and the one-at-a-time change queue; deactivate instead of delete; the startup migration for new columns; the cache headers (`no-cache` for `index.html`, `immutable` for hashed assets).
 - Honest limitations: no auth (tailnet only), no offline support, and the items under "Known issues".
 
 ## Session log
 
 (newest first)
+
+**2026-11-07**
+- Added a note to each exercise (`note` column, `NoteField`, full-width line under the row; a card row on the phone). It goes through the existing PATCH endpoint, so no new route. Added `migrate()` because `CREATE TABLE IF NOT EXISTS` doesn't add columns to the homelab's existing database; tested against a copy of a real snapshot.
+- The phone kept showing the old version after the deploy, until the home-screen app was re-added. Cause: no `Cache-Control` header, so the browser reused a cached `index.html`. Fixed with `FrontendFiles` (`no-cache` for the page, `immutable` for hashed assets). Both are deployed on the homelab and confirmed with `curl -I`.
+- Testing tip: `VITE_API_URL=http://localhost:8000 npm run tauri dev` instead of editing `.env`.
 
 **2026-10-28**
 - Paid bills now move to the bottom of the month list (in the order they were ticked); unpaid bills stay ordered by due day. Done in the `ORDER BY` of `load_month`, so the frontend didn't change.
