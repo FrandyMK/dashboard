@@ -253,7 +253,7 @@ body {
 
 .day-row {
   display: grid;
-  grid-template-columns: 1fr 2rem;
+  grid-template-columns: 1fr auto 2rem;
   align-items: center;
   gap: 0.75rem;
 }
@@ -557,7 +557,7 @@ body {
   .exercise.open .ex-summary {
     display: none;
   }
-  .reorder {
+  .exercise .reorder {
     grid-area: order;
   }
   .toggle {

@@ -93,6 +93,14 @@ export function addDay(name: string): Promise<GymPlan> {
   });
 }
 
+// The rotation follows this order: Complete moves on to the next day in it.
+export function reorderDays(dayIds: string[]): Promise<GymPlan> {
+  return request<GymPlan>("/gym/days/order", {
+    method: "PUT",
+    body: JSON.stringify({ dayIds }),
+  });
+}
+
 export function deleteDay(dayId: string): Promise<GymPlan> {
   return request<GymPlan>(`/gym/days/${enc(dayId)}`, { method: "DELETE" });
 }

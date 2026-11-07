@@ -52,6 +52,10 @@ class CompletedWorkout(CamelModel):
     day_id: str | None = None
 
 
+class DayOrder(CamelModel):
+    day_ids: list[str]
+
+
 class ExerciseOrder(CamelModel):
     exercise_ids: list[str]
 

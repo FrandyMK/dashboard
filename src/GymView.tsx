@@ -5,6 +5,7 @@ import {
   completeWorkout,
   deleteDay,
   deleteExercise,
+  reorderDays,
   reorderExercises,
   updateExercise,
   type Exercise,
@@ -375,6 +376,14 @@ export default function GymView({ plan, onChange }: Props) {
     run(() => deleteDay(id));
   }
 
+  function moveDay(from: number, direction: -1 | 1) {
+    const ids = plan.days.map((d) => d.id);
+    const to = from + direction;
+    if (to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    run(() => reorderDays(ids));
+  }
+
   return (
     <div className="gym">
       {error && <p className="error">{error}</p>}
@@ -392,6 +401,24 @@ export default function GymView({ plan, onChange }: Props) {
                   {active} in workout · {d.exercises.length} in pool
                 </span>
               </button>
+              <span className="reorder">
+                <button
+                  className="move"
+                  title="Move up"
+                  disabled={i === 0}
+                  onClick={() => moveDay(i, -1)}
+                >
+                  ▲
+                </button>
+                <button
+                  className="move"
+                  title="Move down"
+                  disabled={i === plan.days.length - 1}
+                  onClick={() => moveDay(i, 1)}
+                >
+                  ▼
+                </button>
+              </span>
               {plan.days.length > 1 && (
                 <button
                   className={confirmDelete === d.id ? "move delete confirming" : "move delete"}

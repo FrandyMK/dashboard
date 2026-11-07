@@ -300,6 +300,34 @@ def delete_day(conn, day_id: str) -> str | None:
     return None
 
 
+def reorder_days(conn, day_ids: list[str]) -> bool:
+    days = [
+        row["id"]
+        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
+    ]
+    # The new order must contain every day exactly once.
+    if len(day_ids) != len(days) or set(day_ids) != set(days):
+        return False
+
+    # next_day_index is a position, so remember which day it points to
+    # and look that day up again in the new order.
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'next_day_index'"
+    ).fetchone()
+    next_day = days[(int(row["value"]) if row else 0) % len(days)]
+
+    for position, day_id in enumerate(day_ids):
+        conn.execute(
+            "UPDATE workout_days SET position = ? WHERE id = ?", (position, day_id)
+        )
+    conn.execute(
+        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (str(day_ids.index(next_day)),),
+    )
+    return True
+
+
 def log_workout(conn, day_id: str, day_name: str) -> None:
     # A snapshot of what was done today. Later changes to the plan
     # (weights, names, deleting an exercise) never rewrite these rows.

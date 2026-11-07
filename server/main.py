@@ -19,6 +19,7 @@ from db import (
     load_plan,
     mark_paid,
     mark_unpaid,
+    reorder_days,
     reorder_exercises,
     update_bill,
     update_exercise,
@@ -27,6 +28,7 @@ from models import (
     PERIOD_PATTERN,
     BillUpdate,
     CompletedWorkout,
+    DayOrder,
     ExerciseOrder,
     ExerciseUpdate,
     FinanceMonth,
@@ -74,6 +76,16 @@ def post_day(new: NewDay) -> GymPlan:
         if not name:
             raise HTTPException(status_code=422, detail="Name can't be empty")
         add_day(conn, name)
+        return load_plan(conn)
+
+
+@app.put("/gym/days/order")
+def put_day_order(order: DayOrder) -> GymPlan:
+    with connect() as conn:
+        if not reorder_days(conn, order.day_ids):
+            raise HTTPException(
+                status_code=400, detail="Order must list every day exactly once"
+            )
         return load_plan(conn)
 
 
