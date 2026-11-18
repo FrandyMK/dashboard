@@ -74,7 +74,7 @@ dashboard/
 │   ├── db.py                 SQLite connection, schema, seed data, queries
 │   ├── models.py             Pydantic models (camelCase JSON via alias generator)
 │   ├── backup.py             Safe database snapshot, run nightly inside the container
-│   ├── add_user.py           `python add_user.py <tailscale login> "<name>"`: adds a person + starter gym plan
+│   ├── add_user.py           `python add_user.py <tailscale login> "<name>"`: adds a person with empty Push / Pull / Leg days
 │   ├── Dockerfile            Multi-stage: Node builds the frontend, Python serves it all
 │   ├── docker-compose.yml    Build context is the repo root (`..`)
 │   ├── pyproject.toml, uv.lock
@@ -160,11 +160,11 @@ dashboard/
 **Database** (`db.py`)
 - Path from env var `DASHBOARD_DB`, defaulting to `dashboard.db`. In Docker: `/data/dashboard.db`.
 - `connect()` is a context manager: commits on success, rolls back on any exception, always closes.
-- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and gives the owner a starter plan (`seed_plan`) if they have no days.
+- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and gives the owner a starter plan with the example exercises (`seed_plan(..., with_exercises=True)`) if they have no days, i.e. only in a brand-new database.
 - `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` first calls `ensure_owner`, then checks `PRAGMA table_info(...)` and adds what's missing: `user_id` on `workout_days` and `workouts` (added with `DEFAULT ''`, then every existing row set to `OWNER_ID`), `exercises.note`, and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
 - `OWNER_ID = "owner"`: the user who owned everything before users existed. `ensure_owner(conn)` runs on every startup: it upserts that row with `tailscale_login` from env `DASHBOARD_OWNER_LOGIN` (default `owner@localhost`) and `name` from `DASHBOARD_OWNER_NAME` (default `Owner`), `can_finance = 1`. Only the first insert copies `next_day_index` from `settings`; later startups only refresh name and login, so a wrong login is fixed by editing `.env` and restarting.
 - `find_user(conn, login)` → `User | None` (login match is `COLLATE NOCASE`).
-- `seed_plan(conn, user_id)`: the `SEED` days and exercises with fresh `uuid4().hex` ids (not the readable `push`/`bench` ids, because `workout_days.id` is unique across users and the workout log indexes on `exercise_id`), and `next_day_index = 0`. Uses my original weights (80 kg bench etc.), so a new person's plan looks like my old starter data.
+- `seed_plan(conn, user_id, with_exercises=False)`: the `SEED` days (Push / Pull / Leg) with fresh `uuid4().hex` ids (not the readable `push`/`bench` ids, because `workout_days.id` is unique across users and the workout log indexes on `exercise_id`), and `next_day_index = 0`. By default the days are **empty**, which is what `add_user.py` gives new people (exercises they add start at 0 kg via `add_exercise`). `with_exercises=True` also adds the `SEED` example exercises (my original weights); only used for the owner of a brand-new database, so a fresh install has something to show.
 - Gym helpers: `day_ids(conn, user_id)` (ordered), `owns_day(conn, user_id, day_id)`, `get_next_index` / `set_next_index` (on `users`). Every gym function takes `user_id` first. Exercise functions check `owns_day` before anything else, so another person's day id gives `False` → 404 (400 for `reorder_exercises`). Exercises have no `user_id`: they belong to whoever owns their day.
 - The note is `''` when empty, never `NULL`: clearing a note sends `""`, which survives the PATCH route's `exclude_none=True` (a `None` would mean "not changing this field").
 - Tables:
@@ -253,8 +253,7 @@ hl.window_rule({
 - A bill's start month can't be changed in the UI. A bill added while viewing the wrong month needs `UPDATE bills SET start_period = ...` by hand.
 - Deactivating a bill removes it from every month it wasn't paid in, including past ones (there's no `end_period`).
 - **Not confirmed:** whether the Tailscale ACL actually limits her to `homelab1:443`. Test: my PC's Tailscale IP (`tailscale ip -4` on the PC) must not load on her phone; check the policy in the admin console (in my example, `homelab1:443` only matches if `homelab1` is defined under `hosts` or written as its Tailscale IP).
-- **Not confirmed:** that her edits stay separate on the live server. She saw what looked like my old gym data; that is almost certainly the `SEED` starter plan (same as my original data). Check on the homelab that her days have random ids and her `user_id` (query in the "Next step" section), and that changing a weight on her phone doesn't change mine.
-- New people start with my `SEED` weights (80 kg bench etc.), which looks like someone's real data. Could start them at 0 kg (two-line change in `seed_plan`).
+- **Not confirmed:** that her edits stay separate on the live server. She first saw what looked like my old gym data: the old starter plan, which copied my `SEED` weights. On 2026-11-19 her exercises were deleted by hand on the homelab (`DELETE FROM exercises WHERE day_id IN (... u.id != 'owner')`), so she now has empty Push / Pull / Leg days like new people. Check on the homelab that her days have random ids and her `user_id` (query in the "Next step" section), and that changing a weight on her phone doesn't change mine.
 - Reordering another person's exercises answers 400 ("Order must list…") instead of 404. Nothing leaks; just a less precise message.
 - People can only be added from the command line (`add_user.py`); removing someone, changing their login or access, or giving them finance is SQL only.
 - To-do and habits are hidden for non-owners via `canFinance` (shortcut, see `App.tsx`).
@@ -297,7 +296,7 @@ Where it stopped (2026-11-18): sharing is deployed and working. Homelab runs `c5
   `docker compose exec api python -c "import sqlite3; c = sqlite3.connect('/data/dashboard.db'); [print(r) for r in c.execute('SELECT u.name, d.name, d.id FROM workout_days d JOIN users u ON u.id = d.user_id ORDER BY u.name, d.position')]"`
   My days should have ids `push`/`pull`/`legs`, hers long random ids. Then change a weight on her phone and confirm mine doesn't change.
 - **Check the ACL** (see Known issues).
-- Maybe: start new people at 0 kg; open the gym directly when it's someone's only tile.
+- Maybe: open the gym directly when it's someone's only tile.
 - **Screenshots.** The README text is up to date apart from the uncommitted sharing changes. An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone; the gym shot could show the days screen, the phone shot a swiped day card or an open exercise card), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
@@ -305,6 +304,9 @@ After that: the to-do tile (roadmap item 2).
 ## Session log
 
 (newest first)
+
+**2026-11-19**
+- New people now start with empty Push / Pull / Leg days instead of a copy of my example plan with my weights (`seed_plan(..., with_exercises=False)` by default; a brand-new database still gives the owner the examples, so a fresh install isn't empty). Her existing exercises were deleted by hand with SQL on the homelab so she starts empty too.
 
 **2026-11-18 (sharing the gym tile)**
 - My girlfriend now uses the gym tile on her phone with her own plan. She was invited into my tailnet; `tailscale serve` on the homelab now fronts the API (HTTPS, `https://homelab1.<tailnet>.ts.net`) and the container only listens on `127.0.0.1`, so the `Tailscale-User-Login` header can't be forged. Chosen over a secret link or passwords because everyone needs Tailscale anyway; identity lives only in `current_user()`, so real logins can replace it if friends or a separate app come later.

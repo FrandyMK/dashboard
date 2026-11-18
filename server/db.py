@@ -88,7 +88,8 @@ CREATE INDEX IF NOT EXISTS workout_exercises_by_exercise
     ON workout_exercises (exercise_id);
 """
 
-# (id, name, weight, sets, reps, active) — only used to fill an empty database.
+# The starter days for everyone. The exercises (id, name, weight, sets, reps,
+# active) are only added for the owner of a brand-new database.
 SEED = [
     ("push", "Push day", [
         ("bench", "Bench press", 80, 3, 5, True),
@@ -128,7 +129,7 @@ def init_db():
         conn.executescript(SCHEMA)
         migrate(conn)
         if not day_ids(conn, OWNER_ID):
-            seed_plan(conn, OWNER_ID)
+            seed_plan(conn, OWNER_ID, with_exercises=True)
 
 
 def migrate(conn):
@@ -187,16 +188,22 @@ def find_user(conn, login: str) -> User | None:
     return User(id=row["id"], name=row["name"], can_finance=bool(row["can_finance"]))
 
 
-def seed_plan(conn, user_id: str) -> None:
-    # A starter plan for someone with no days yet. Fresh random ids, not the
-    # readable ones in SEED: workout_days.id is unique across all users, and
-    # the workout log looks exercises up by id, so ids must never be shared.
+def seed_plan(conn, user_id: str, with_exercises: bool = False) -> None:
+    # A starter plan for someone with no days yet: the SEED days, empty, so a
+    # new person fills them with their own exercises (added ones start at 0 kg).
+    # with_exercises also adds the example exercises; only used for the owner
+    # of a brand-new database, so a fresh install has something to show.
+    # Fresh random ids, not the readable ones in SEED: workout_days.id is unique
+    # across all users, and the workout log looks exercises up by id, so ids
+    # must never be shared.
     for day_pos, (_, day_name, exercises) in enumerate(SEED):
         day_id = uuid4().hex
         conn.execute(
             "INSERT INTO workout_days (id, user_id, name, position) VALUES (?, ?, ?, ?)",
             (day_id, user_id, day_name, day_pos),
         )
+        if not with_exercises:
+            continue
         for ex_pos, (_, name, weight, sets, reps, active) in enumerate(exercises):
             conn.execute(
                 """INSERT INTO exercises

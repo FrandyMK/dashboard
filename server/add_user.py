@@ -1,4 +1,4 @@
-"""Add someone to the dashboard, with a starter gym plan.
+"""Add someone to the dashboard, with empty Push / Pull / Leg days to fill in.
 
 On the homelab:
     docker compose exec api python add_user.py her@example.com "Her name"
@@ -34,7 +34,7 @@ def main() -> None:
         )
         seed_plan(conn, user_id)
 
-    print(f"Added {name} ({login}) with a starter gym plan.")
+    print(f"Added {name} ({login}) with empty Push / Pull / Leg days.")
 
 
 if __name__ == "__main__":

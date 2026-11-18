@@ -77,7 +77,7 @@ server/
 ├── db.py               Schema, migrations, seed data, queries
 ├── models.py           Pydantic models
 ├── backup.py           Safe database snapshot
-├── add_user.py         Add a person, with a starter gym plan
+├── add_user.py         Add a person, with empty Push / Pull / Leg days
 ├── Dockerfile          Node builds the frontend, Python serves everything
 └── docker-compose.yml
 ```
@@ -126,7 +126,7 @@ server/
 
 **Who gets what is decided by the server.** Finance routes sit on their own `APIRouter` with a dependency that answers 403 for anyone but me, so a finance route added later can't forget the check. The frontend asks `/me` first and leaves out the tiles someone can't use, but that's only to keep their screen clean; the server would refuse anyway. 401 means "I don't know who you are", 403 means "I know, and you're not allowed".
 
-**Per-person data through the day.** Training days have a `user_id`; exercises don't need one, because they belong to whoever owns their day. Every gym function takes the user's id and checks the day first, so guessing someone else's day id gets a 404. The "next day" moved from a global setting to each user's row. A new person's starter plan gets random ids rather than readable ones like `push`, because day ids are unique across everyone and the workout log looks exercises up by id. The migration gave every existing day and logged workout to me, and my login comes from `server/.env` (refreshed on every start), so it isn't in this public repo.
+**Per-person data through the day.** Training days have a `user_id`; exercises don't need one, because they belong to whoever owns their day. Every gym function takes the user's id and checks the day first, so guessing someone else's day id gets a 404. The "next day" moved from a global setting to each user's row. A new person starts with empty Push / Pull / Leg days to fill in themselves (new exercises start at 0 kg), so nobody starts out with someone else's numbers. Their days get random ids rather than readable ones like `push`, because day ids are unique across everyone and the workout log looks exercises up by id. The migration gave every existing day and logged workout to me, and my login comes from `server/.env` (refreshed on every start), so it isn't in this public repo.
 
 **Safe SQL.** Every value goes through `?` placeholders. The one dynamic part, the `SET` clause for partial updates, only accepts column names from a fixed whitelist.
 
