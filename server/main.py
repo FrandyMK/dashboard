@@ -1,8 +1,17 @@
+import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, HTTPException, Path as PathParam, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path as PathParam,
+    Query,
+    Request,
+)
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
@@ -14,6 +23,7 @@ from db import (
     connect,
     delete_day,
     delete_exercise,
+    find_user,
     init_db,
     load_month,
     load_plan,
@@ -36,6 +46,7 @@ from models import (
     NewBill,
     NewDay,
     NewExercise,
+    User,
 )
 
 
@@ -57,6 +68,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Who is asking ---
+# tailscale serve adds this header to every request, from the Tailscale login
+# of the device that sent it. This is the only place that knows identity comes
+# from Tailscale; swapping in real logins later means changing just this.
+def current_user(request: Request) -> User:
+    login = request.headers.get("Tailscale-User-Login") or os.environ.get("DASHBOARD_DEV_USER")
+    if not login:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    with connect() as conn:
+        user = find_user(conn, login)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    return user
+
+
+CurrentUser = Annotated[User, Depends(current_user)]
+
+
+def finance_user(user: CurrentUser) -> User:
+    if not user.can_finance:
+        raise HTTPException(status_code=403, detail="No access to finance")
+    return user
+
+
+@app.get("/me")
+def get_me(user: CurrentUser) -> User:
+    return user
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -151,14 +192,17 @@ def post_complete(completed: CompletedWorkout | None = None) -> GymPlan:
 PeriodInPath = Annotated[str, PathParam(pattern=PERIOD_PATTERN)]
 PeriodInQuery = Annotated[str, Query(pattern=PERIOD_PATTERN)]
 
+# Every route on this router checks finance access first.
+finance = APIRouter(prefix="/finance", dependencies=[Depends(finance_user)])
 
-@app.get("/finance/months/{period}")
+
+@finance.get("/months/{period}")
 def get_finance_month(period: PeriodInPath) -> FinanceMonth:
     with connect() as conn:
         return load_month(conn, period)
 
 
-@app.post("/finance/bills")
+@finance.post("/bills")
 def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
     with connect() as conn:
         # A bill starts in the month it was added from: adding one while
@@ -167,7 +211,7 @@ def post_bill(new: NewBill, period: PeriodInQuery) -> FinanceMonth:
         return load_month(conn, period)
 
 
-@app.patch("/finance/bills/{bill_id}")
+@finance.patch("/bills/{bill_id}")
 def patch_bill(bill_id: str, update: BillUpdate, period: PeriodInQuery) -> FinanceMonth:
     with connect() as conn:
         changes = update.model_dump(exclude_none=True)
@@ -176,7 +220,7 @@ def patch_bill(bill_id: str, update: BillUpdate, period: PeriodInQuery) -> Finan
         return load_month(conn, period)
 
 
-@app.put("/finance/months/{period}/payments/{bill_id}")
+@finance.put("/months/{period}/payments/{bill_id}")
 def put_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
     with connect() as conn:
         if not mark_paid(conn, bill_id, period):
@@ -184,12 +228,15 @@ def put_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
         return load_month(conn, period)
 
 
-@app.delete("/finance/months/{period}/payments/{bill_id}")
+@finance.delete("/months/{period}/payments/{bill_id}")
 def delete_payment(period: PeriodInPath, bill_id: str) -> FinanceMonth:
     with connect() as conn:
         if not mark_unpaid(conn, bill_id, period):
             raise HTTPException(status_code=404, detail="Bill not found")
         return load_month(conn, period)
+
+
+app.include_router(finance)
 
 
 # Serve the built frontend, if present (it is inside Docker, not in local dev).

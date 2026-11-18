@@ -60,6 +60,12 @@ class ExerciseOrder(CamelModel):
     exercise_ids: list[str]
 
 
+class User(CamelModel):
+    id: str
+    name: str
+    can_finance: bool
+
+
 # A month written as "2026-11". Used to validate the period in URLs.
 PERIOD_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 

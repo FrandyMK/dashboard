@@ -4,13 +4,33 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from models import Bill, Exercise, FinanceMonth, GymPlan, MonthBill, Payment, WorkoutDay
+from models import (
+    Bill,
+    Exercise,
+    FinanceMonth,
+    GymPlan,
+    MonthBill,
+    Payment,
+    User,
+    WorkoutDay,
+)
 
 DB_PATH = os.environ.get("DASHBOARD_DB", "dashboard.db")
 
+# The person who already had the dashboard before it had users.
+OWNER_ID = "owner"
+
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tailscale_login TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    can_finance INTEGER NOT NULL DEFAULT 0,
+    next_day_index INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS workout_days (
     id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     position INTEGER NOT NULL
 );
@@ -48,6 +68,7 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE TABLE IF NOT EXISTS workouts (
     id INTEGER PRIMARY KEY,
+    user_id TEXT NOT NULL,
     day_id TEXT NOT NULL,
     day_name TEXT NOT NULL,
     completed_at TEXT NOT NULL
@@ -114,6 +135,15 @@ def init_db():
 def migrate(conn):
     # Databases created before a column existed don't get it from SCHEMA,
     # because CREATE TABLE IF NOT EXISTS skips existing tables.
+    ensure_owner(conn)
+
+    # Everything that existed before users belongs to the owner.
+    for table in ("workout_days", "workouts"):
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "user_id" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+            conn.execute(f"UPDATE {table} SET user_id = ?", (OWNER_ID,))
+
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(exercises)")}
     if "note" not in columns:
         conn.execute("ALTER TABLE exercises ADD COLUMN note TEXT NOT NULL DEFAULT ''")
@@ -130,11 +160,39 @@ def migrate(conn):
         )
 
 
+def ensure_owner(conn):
+    # Runs on every startup. The first time, it creates the owner and takes over
+    # next_day_index from settings; after that it only refreshes the name and
+    # login from the environment, so a wrong login is fixed by editing .env and
+    # restarting.
+    login = os.environ.get("DASHBOARD_OWNER_LOGIN") or "owner@localhost"
+    name = os.environ.get("DASHBOARD_OWNER_NAME") or "Owner"
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'next_day_index'"
+    ).fetchone()
+    conn.execute(
+        """INSERT INTO users (id, name, tailscale_login, can_finance, next_day_index)
+           VALUES (?, ?, ?, 1, ?)
+           ON CONFLICT (id) DO UPDATE SET
+               name = excluded.name, tailscale_login = excluded.tailscale_login""",
+        (OWNER_ID, name, login, int(row["value"]) if row else 0),
+    )
+
+
+def find_user(conn, login: str) -> User | None:
+    row = conn.execute(
+        "SELECT id, name, can_finance FROM users WHERE tailscale_login = ?", (login,)
+    ).fetchone()
+    if row is None:
+        return None
+    return User(id=row["id"], name=row["name"], can_finance=bool(row["can_finance"]))
+
+
 def seed(conn):
     for day_pos, (day_id, day_name, exercises) in enumerate(SEED):
         conn.execute(
-            "INSERT INTO workout_days (id, name, position) VALUES (?, ?, ?)",
-            (day_id, day_name, day_pos),
+            "INSERT INTO workout_days (id, user_id, name, position) VALUES (?, ?, ?, ?)",
+            (day_id, OWNER_ID, day_name, day_pos),
         )
         for ex_pos, (ex_id, name, weight, sets, reps, active) in enumerate(exercises):
             conn.execute(
@@ -260,9 +318,10 @@ def add_day(conn, name: str) -> None:
     next_position = conn.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM workout_days"
     ).fetchone()[0]
+    # Step 3 replaces OWNER_ID with the user who is asking.
     conn.execute(
-        "INSERT INTO workout_days (id, name, position) VALUES (?, ?, ?)",
-        (uuid4().hex, name, next_position),
+        "INSERT INTO workout_days (id, user_id, name, position) VALUES (?, ?, ?, ?)",
+        (uuid4().hex, OWNER_ID, name, next_position),
     )
 
 
@@ -328,12 +387,14 @@ def reorder_days(conn, day_ids: list[str]) -> bool:
     return True
 
 
-def log_workout(conn, day_id: str, day_name: str) -> None:
+def log_workout(conn, day_id: str) -> None:
     # A snapshot of what was done today. Later changes to the plan
     # (weights, names, deleting an exercise) never rewrite these rows.
+    # The user and the day's name are copied from the day itself.
     cursor = conn.execute(
-        "INSERT INTO workouts (day_id, day_name, completed_at) VALUES (?, ?, ?)",
-        (day_id, day_name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        """INSERT INTO workouts (user_id, day_id, day_name, completed_at)
+           SELECT user_id, id, name, ? FROM workout_days WHERE id = ?""",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), day_id),
     )
     conn.execute(
         """INSERT INTO workout_exercises
@@ -366,7 +427,7 @@ def complete_workout(conn, day_id: str | None = None) -> bool:
         current = ids.index(day_id)
 
     day = days[current]
-    log_workout(conn, day["id"], day["name"])
+    log_workout(conn, day["id"])
 
     conn.execute(
         """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
