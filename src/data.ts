@@ -38,18 +38,42 @@ function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return result;
 }
 
+// The server answered, but with an error. Keeps the status code, so callers can
+// tell "not registered" (401) apart from "can't reach the server" (a TypeError
+// thrown by fetch itself).
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(`${status}: ${message}`);
+    this.status = status;
+  }
+}
+
 async function send<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options.headers },
   });
   if (!response.ok) {
-    throw new Error(`${response.status}: ${await response.text()}`);
+    throw new ApiError(response.status, await response.text());
   }
   return response.json();
 }
 
 const enc = encodeURIComponent;
+
+// --- Who is looking ---
+
+export type Me = {
+  id: string;
+  name: string;
+  canFinance: boolean;
+};
+
+export function getMe(): Promise<Me> {
+  return request<Me>("/me");
+}
 
 export function getGymPlan(): Promise<GymPlan> {
   return request<GymPlan>("/gym/plan");

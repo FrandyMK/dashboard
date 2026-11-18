@@ -13,7 +13,10 @@ export type LiveData<T> = {
 // component, or wrapped in useCallback. Otherwise the effect would re-run on
 // every render. When it does change (useCallback with a new dependency), the
 // effect starts over and loads from the new function.
-export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
+// With enabled = false it does nothing at all (e.g. a tile this person can't
+// see). It's a parameter rather than skipping the hook, because React needs
+// the same hooks to run on every render.
+export function useLiveData<T>(load: () => Promise<T>, enabled = true): LiveData<T> {
   const [data, setDataState] = useState<T | null>(null);
   const [error, setError] = useState(false);
 
@@ -23,6 +26,8 @@ export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
   const latest = useRef(0);
 
   useEffect(() => {
+    if (!enabled) return;
+
     function refresh() {
       const mine = ++latest.current;
       load()
@@ -52,7 +57,7 @@ export function useLiveData<T>(load: () => Promise<T>): LiveData<T> {
       document.removeEventListener("visibilitychange", onVisible);
       clearInterval(interval);
     };
-  }, [load]);
+  }, [load, enabled]);
 
   function setData(next: T) {
     latest.current++;
