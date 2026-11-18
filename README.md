@@ -2,7 +2,7 @@
 
 A personal tile dashboard. Each tile shows a one-line summary and opens into a small app when clicked. On my desktop it lives full-time on its own Hyprland workspace; on my phone it's a home-screen web app I use at the gym.
 
-One React codebase runs in both places, talking to one small FastAPI + SQLite server on my home server over Tailscale. Built as a post-graduation portfolio project.
+One React codebase runs in both places, talking to one small FastAPI + SQLite server on my home server over Tailscale. The gym tile is shared: my girlfriend uses it on her phone with her own training plan, and the server tells us apart by our Tailscale logins. Built as a post-graduation portfolio project.
 
 > **Status:** the gym and finance tiles are fully working; the to-do and habit tiles are placeholders.
 
@@ -31,6 +31,11 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 - Add, edit and deactivate bills. Deactivated bills can be brought back.
 - Payment history is kept per month, with the amount that was actually paid.
 
+**Several people**
+- Everyone on the tailnet who has been added gets their own gym plan: their own days, exercises, "next day" and workout log. Nobody can see or change anyone else's.
+- The finance tile is only for me. Others don't see it, and the server refuses their finance requests too.
+- No passwords or login screen: the server knows who is asking from their Tailscale login.
+
 **Everywhere**
 - Changes save immediately; there's no Save button.
 - Every device stays in sync: the dashboard refreshes on focus, when the phone wakes up, and once a minute.
@@ -40,17 +45,18 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 
 ```
 Desktop (Tauri app, workspace 5) ──┐
-                                   ├──► FastAPI on homelab1:8010 ──► SQLite
-Phone (browser, home screen) ──────┘     (Docker, Tailscale only)
-                                                │
-                                                └─ nightly backup ──► pulled to my PC
+My phone (browser, home screen) ───┼──► tailscale serve ──► FastAPI ──► SQLite
+Her phone (browser, home screen) ──┘    (HTTPS, adds      (Docker, only on
+                                         who is asking)    127.0.0.1)
+                                                                  │
+                                              nightly backup ──► pulled to my PC
 ```
 
 - **Frontend:** React + TypeScript, built with Vite. It's a plain web app with no Tauri-specific code, so the same build runs in both places.
 - **Desktop:** a [Tauri v2](https://v2.tauri.app) window, far lighter than Electron for an app that's always open. A Hyprland window rule pins it to workspace 5.
-- **Phone:** the API container also serves the built frontend, so the phone just opens `http://homelab1:8010`.
+- **Phone:** the API container also serves the built frontend, so the phone just opens `https://homelab1.<tailnet>.ts.net`.
 - **Backend:** FastAPI, Pydantic and plain `sqlite3`, managed with [uv](https://docs.astral.sh/uv/), running in Docker on an Ubuntu home server.
-- **Network:** every device is on my [Tailscale](https://tailscale.com) tailnet, and the API only listens on the server's Tailscale address.
+- **Network:** every device is on my [Tailscale](https://tailscale.com) tailnet. The API container only listens on `127.0.0.1`; [`tailscale serve`](https://tailscale.com/kb/1312/serve) is the only way in, and adds HTTPS and the identity of whoever is asking. An access rule lets other people's devices reach the dashboard and nothing else on my tailnet.
 
 The server is the single source of truth. The frontend never decides what the data looks like: it asks for a change, and whatever the server returns is what gets shown.
 
@@ -71,6 +77,7 @@ server/
 ├── db.py               Schema, migrations, seed data, queries
 ├── models.py           Pydantic models
 ├── backup.py           Safe database snapshot
+├── add_user.py         Add a person, with a starter gym plan
 ├── Dockerfile          Node builds the frontend, Python serves everything
 └── docker-compose.yml
 ```
@@ -115,6 +122,12 @@ server/
 
 **Cache headers for the phone.** Without a caching instruction, the phone's home-screen app kept showing an old version after a deploy. `index.html` is now served with `Cache-Control: no-cache` (the browser checks with the server every time). The built JavaScript and CSS files have a content hash in their names, so they're cached forever.
 
+**Identity comes from Tailscale, in exactly one place.** Everyone already needs Tailscale to reach the server, and Tailscale already knows whose device sent each request. So instead of building passwords and sessions, `tailscale serve` puts the sender's login in a `Tailscale-User-Login` header, and one FastAPI dependency, `current_user()`, looks that login up in a `users` table. That only works because the container listens on `127.0.0.1`: if the API port were reachable directly, anyone could send that header themselves. Every route only ever sees a user id, so moving to real logins later (passkeys, or OAuth for friends without Tailscale) means changing that one function, not the data or the routes.
+
+**Who gets what is decided by the server.** Finance routes sit on their own `APIRouter` with a dependency that answers 403 for anyone but me, so a finance route added later can't forget the check. The frontend asks `/me` first and leaves out the tiles someone can't use, but that's only to keep their screen clean; the server would refuse anyway. 401 means "I don't know who you are", 403 means "I know, and you're not allowed".
+
+**Per-person data through the day.** Training days have a `user_id`; exercises don't need one, because they belong to whoever owns their day. Every gym function takes the user's id and checks the day first, so guessing someone else's day id gets a 404. The "next day" moved from a global setting to each user's row. A new person's starter plan gets random ids rather than readable ones like `push`, because day ids are unique across everyone and the workout log looks exercises up by id. The migration gave every existing day and logged workout to me, and my login comes from `server/.env` (refreshed on every start), so it isn't in this public repo.
+
 **Safe SQL.** Every value goes through `?` placeholders. The one dynamic part, the `SET` clause for partial updates, only accepts column names from a fixed whitelist.
 
 ## Running it locally
@@ -138,7 +151,7 @@ npm install
 
 # Terminal 1: the API on http://localhost:8000 (creates and seeds server/dashboard.db)
 cd server
-uv run fastapi dev main.py
+DASHBOARD_DEV_USER=owner@localhost uv run fastapi dev main.py
 
 # Terminal 2: the desktop app, pointed at the local API
 VITE_API_URL=http://localhost:8000 npm run tauri dev
@@ -146,24 +159,40 @@ VITE_API_URL=http://localhost:8000 npm run tauri dev
 
 The first Tauri run compiles the Rust side and takes a few minutes. The UI hot-reloads on save, and the interactive API docs are at `http://localhost:8000/docs`.
 
+Locally there's no `tailscale serve` to say who is asking, so `DASHBOARD_DEV_USER` stands in for the missing header. `owner@localhost` is the owner's login when `DASHBOARD_OWNER_LOGIN` isn't set. It's never set on the server, where the header is the only way in.
+
 `VITE_API_URL` is baked in at build time. For everyday use, a root `.env` (see `.env.example`) points it at the home server. Setting it in the shell, as above, overrides the file for that one run.
 
 ## Deployment
 
 ### Server (Docker)
 
-The Dockerfile is multi-stage: a Node stage builds the frontend, and a Python stage runs the API and serves that build. The compose file stores the database in `server/data/` and binds to an address taken from `server/.env` (gitignored, machine-specific):
+The Dockerfile is multi-stage: a Node stage builds the frontend, and a Python stage runs the API and serves that build. The compose file stores the database in `server/data/` and reads its settings from `server/.env` (gitignored, machine-specific):
 
 ```bash
 # server/.env on the home server
-BIND_ADDRESS=<the server's Tailscale IP>
+BIND_ADDRESS=127.0.0.1                     # only tailscale serve can reach it
 API_PORT=8010
+DASHBOARD_OWNER_LOGIN=<my Tailscale login>  # see `tailscale whois <my PC's Tailscale IP>`
+DASHBOARD_OWNER_NAME=<my name>
 ```
 
-Without a `.env`, it binds to `127.0.0.1:8000`, so it's never exposed by accident. Deploying an update:
+Without a `.env`, it binds to `127.0.0.1:8000`, so it's never exposed by accident. Once, on the server, put Tailscale in front of it (needs MagicDNS and HTTPS certificates turned on in the Tailscale admin console):
+
+```bash
+sudo tailscale serve --bg http://127.0.0.1:8010   # https://homelab1.<tailnet>.ts.net
+```
+
+Deploying an update:
 
 ```bash
 cd ~/dashboard/server && git pull && docker compose up -d --build
+```
+
+Adding a person: invite them to the tailnet, give them an access rule that only allows the dashboard server, and add them with their login exactly as Tailscale shows it (the Users page in the admin console):
+
+```bash
+docker compose exec api python add_user.py <their login> "<their name>"
 ```
 
 ### Desktop
@@ -183,7 +212,7 @@ hl.window_rule({
 
 ### Phone
 
-Open `http://homelab1:8010` in the browser and add it to the home screen.
+With Tailscale connected, open `https://homelab1.<tailnet>.ts.net` in the browser and add it to the home screen.
 
 ## Backups
 
@@ -196,7 +225,8 @@ Open `http://homelab1:8010` in the browser and add it to the home screen.
 
 These are known and deliberate for now:
 
-- **No authentication.** The API is only reachable on my tailnet, and only my own devices are on it. This would need to change before giving anyone else access.
+- **Everyone needs Tailscale.** Identity comes from Tailscale logins, so each person has to be invited to my tailnet. Fine for a few people I know; anyone beyond that would need real logins, which only means replacing `current_user()`.
+- **People are added from the command line**, with `add_user.py`. There's no screen for it, and no way to remove someone or change their access other than SQL.
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
 - **Marking a bill paid always records its current amount**, which doesn't suit bills that vary month to month. A bill's start month also can't be changed in the app.
@@ -215,6 +245,7 @@ These are known and deliberate for now:
 - [ ] Habit tracker tile
 - [x] Finance: switch between months
 - [x] Gym: add, delete and reorder training days
+- [x] Share the gym tile: one plan per person, identity from Tailscale
 - [ ] Finance: custom amount when marking paid
 - [ ] Progression graphs in the gym tile
 - [ ] Offline support for the phone, queuing changes until there's signal

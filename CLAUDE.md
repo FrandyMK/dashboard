@@ -4,7 +4,7 @@ Context for continuing this project in a new chat. Written at the end of the pre
 
 **Repository:** https://github.com/FrandyMK/dashboard (public, branch `master`)
 
-**Next step:** check the swipeable day and exercise cards on the phone, add README screenshots, then the to-do tile. See the "Next step" section.
+**Next step:** finish sharing the gym tile (commit the README, check the ACL and that her edits stay separate), then README screenshots, then the to-do tile. See the "Next step" section.
 
 ---
 
@@ -23,8 +23,9 @@ Context for continuing this project in a new chat. Written at the end of the pre
 | PC (development) | Omarchy (Arch Linux + Hyprland 0.55+). Editor: LazyVim (nvim). Terminal: foot. Browser: Chromium. |
 | Homelab | Ubuntu with Docker. Tailscale hostname: `homelab1`. Repo cloned at `~/dashboard`. |
 | Phone | Uses the dashboard in the browser, added to the home screen. |
+| Girlfriend's phone | Same, gym tile only. Her own Tailscale login, invited into my tailnet. |
 
-All three are connected via **Tailscale**. The API is only reachable over the tailnet.
+All are connected via **Tailscale** (this file is public, so the tailnet name isn't written here: `tailscale status --json | grep MagicDNSSuffix` on the PC shows it). The API is only reachable through `tailscale serve` on the homelab, at `https://homelab1.<tailnet>.ts.net`.
 
 **Important environment quirks:**
 - Hyprland 0.55+ and Omarchy 4 use **Lua config** (`~/.config/hypr/*.lua`), not the old `hyprland.conf` syntax. Omarchy changes fast, so check current docs or my actual files before giving config advice.
@@ -35,21 +36,23 @@ All three are connected via **Tailscale**. The API is only reachable over the ta
 
 ## What exists now
 
-A personal tile dashboard. Each tile shows a summary and opens into a small app when clicked. **The gym and finance tiles are fully working; to-do and habits tiles are placeholders.**
+A personal tile dashboard. Each tile shows a summary and opens into a small app when clicked. **The gym and finance tiles are fully working; to-do and habits tiles are placeholders.** It has **several users**: my girlfriend uses the gym tile with her own plan. Identity comes from Tailscale logins; finance is mine only.
 
 It runs in two places from one React codebase:
 - **Desktop:** a Tauri app pinned to Hyprland workspace 5.
-- **Phone:** the same frontend, built and served by the API container on the homelab, at `http://homelab1:8010`.
+- **Phone:** the same frontend, built and served by the API container on the homelab, at `https://homelab1.<tailnet>.ts.net`.
 
 ### Architecture
 
 ```
 Desktop (Tauri app, workspace 5) ──┐
-                                   ├──► FastAPI on homelab1:8010 ──► SQLite (server/data/dashboard.db)
-Phone (browser, home screen) ──────┘         (Docker, Tailscale only)
-                                                    │
-                                                    └─ nightly backup ──► pulled to PC
+My phone (browser, home screen) ───┼──► tailscale serve ──► FastAPI on 127.0.0.1:8010 ──► SQLite (server/data/dashboard.db)
+Her phone (browser, home screen) ──┘    (HTTPS; adds          (Docker)
+                                         Tailscale-User-Login)        │
+                                                                      └─ nightly backup ──► pulled to PC
 ```
+
+Future direction (2026-11-18): maybe more friends later, a more interactive gym part, maybe a separate gym app. That's why identity sits in one swappable function (`current_user()` in `main.py`): real logins (passkeys/OAuth) for people without Tailscale would only replace that.
 
 The server is the single source of truth. The frontend never decides what the data looks like: it asks for a change, and whatever the server returns is shown.
 
@@ -71,12 +74,13 @@ dashboard/
 │   ├── db.py                 SQLite connection, schema, seed data, queries
 │   ├── models.py             Pydantic models (camelCase JSON via alias generator)
 │   ├── backup.py             Safe database snapshot, run nightly inside the container
+│   ├── add_user.py           `python add_user.py <tailscale login> "<name>"`: adds a person + starter gym plan
 │   ├── Dockerfile            Multi-stage: Node builds the frontend, Python serves it all
 │   ├── docker-compose.yml    Build context is the repo root (`..`)
 │   ├── pyproject.toml, uv.lock
 ├── .claude/commands/handoff.md  `/handoff`: updates this file at the end of a session
 ├── .dockerignore             At repo root (because the build context is the root)
-├── .env.example              VITE_API_URL=http://homelab1:8010
+├── .env.example              VITE_API_URL=https://homelab1.<tailnet>.ts.net (placeholder; repo is public)
 ├── LICENSE                   MIT
 └── README.md                 Features, architecture, design decisions, setup, deployment, limitations
 ```
@@ -84,20 +88,24 @@ dashboard/
 ### Frontend details
 
 **`data.ts`**
-- `API_URL = import.meta.env.VITE_API_URL ?? ""`. Empty means same address the page came from (used by the phone version). The desktop sets it via a root `.env` to `http://homelab1:8010`, which is baked in at build time.
+- `API_URL = import.meta.env.VITE_API_URL ?? ""`. Empty means same address the page came from (used by the phone version). The desktop sets it via a root `.env` (gitignored) to `https://homelab1.<tailnet>.ts.net`, which is baked in at build time, so changing it needs a desktop rebuild.
 - `request<T>()` is generic: each caller names the type it expects (`request<GymPlan>`, `request<FinanceMonth>`). This is a promise to the compiler only; nothing checks the response at runtime.
 - `request()` queues non-GET requests through `previousChange` so they're sent one at a time; `send()` does the actual fetch.
+- `send()` throws `ApiError` (has `.status`) when the server answers with an error, so callers can tell a 401 apart from a network failure (which is a `TypeError` from `fetch`).
+- Identity: type `Me` (`{ id, name, canFinance }`) and `getMe()` (`GET /me`).
 - Gym: types `Exercise`, `WorkoutDay`, `GymPlan`, `ExerciseChanges`; functions `getGymPlan`, `updateExercise`, `addExercise`, `deleteExercise`, `reorderExercises`, `addDay`, `deleteDay`, `reorderDays`, `completeWorkout(dayId)`. Each returns the full updated `GymPlan`.
 - Finance: types `Payment`, `MonthBill`, `Bill`, `FinanceMonth`, `NewBill`, `BillChanges`; functions `getFinanceMonth`, `addBill`, `updateBill`, `markPaid`, `markUnpaid`. Each takes the `period` being viewed and returns that `FinanceMonth`.
 - `currentPeriod()` gives the device's current month as `"2026-11"` in **local** time. `shiftPeriod(period, months)` moves a period forward or back (`shiftPeriod("2026-01", -1)` is `"2025-12"`); it builds `new Date(year, month - 1 + months, 1)`, which handles the year overflow, and formats it with `currentPeriod`. (`loadCurrentMonth()` is gone; the loader now lives in `App`.)
 
 **`useLiveData.ts`** (the data source part of a tile)
-- `useLiveData(load)` returns `{ data, error, setData }`. It refreshes on load, on window focus, on `visibilitychange` (for the phone) and every 60 seconds, with cleanup.
+- `useLiveData(load, enabled = true)` returns `{ data, error, setData }`. It refreshes on load, on window focus, on `visibilitychange` (for the phone) and every 60 seconds, with cleanup. With `enabled = false` the effect does nothing (used for finance when the user has no access); it's a parameter because React needs the same hooks on every render.
 - `load` must be the same function on every render: defined outside any component (e.g. `getGymPlan`) or wrapped in `useCallback` (the finance loader). An inline arrow would re-run the effect on every render and cause an endless request loop. When a `useCallback` dependency changes, the effect deliberately starts over with the new loader; the stale-refresh guard drops any answer still in flight for the old one.
 - Stale-refresh guard: a `latest` counter (`useRef`) goes up when a refresh starts and when `setData` is called with a mutation's response. A refresh only applies its answer if nothing newer happened since it started, so a slow background refresh can't undo a change you just made. `setData` also clears the error flag, since the server just answered.
 - Out-of-order changes can't happen either: `request()` in `data.ts` sends changes (anything not GET) one at a time, each waiting for the previous answer. A failed change doesn't block the queue. The more general alternative, a server-side version number in every response, was considered and left for if it's ever needed.
 
 **`App.tsx`**
+- Two components. `App` first loads `getMe()` (shows "Loading…", "Can't reach the server", or "This device isn't registered for the dashboard." on a 401; until it works it retries on focus/visibilitychange), then renders `<Dashboard me={me} />`, which is what used to be `App`. Everything below describes `Dashboard`.
+- Tiles are built as `allTiles` with an optional `hidden` flag, then filtered. Finance is hidden when `!me.canFinance`, and its hook gets `enabled = me.canFinance`, so her phone never requests finance. To-do and habits are placeholders with made-up numbers, so they're also hidden for non-owners; for now that reuses `canFinance` as a shortcut. Give them their own per-person rule when they become real.
 - `Tile` type: `{ id, title, preview: string, view?: () => ReactNode }`. A tile without `view` is a placeholder. Each entry turns its own data into a preview string and a render function, so `App` deals with one plain shape whatever the data type.
 - `previewOf(source, describe)` and `viewOf(source, render)` handle the loading/error states for every tile.
 - Data hooks live in `App` (not inside each tile) so data survives opening and closing tiles.
@@ -152,31 +160,43 @@ dashboard/
 **Database** (`db.py`)
 - Path from env var `DASHBOARD_DB`, defaulting to `dashboard.db`. In Docker: `/data/dashboard.db`.
 - `connect()` is a context manager: commits on success, rolls back on any exception, always closes.
-- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and seeds an empty database.
-- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` checks `PRAGMA table_info(...)` and adds what's missing: `exercises.note`, and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
+- `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and gives the owner a starter plan (`seed_plan`) if they have no days.
+- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` first calls `ensure_owner`, then checks `PRAGMA table_info(...)` and adds what's missing: `user_id` on `workout_days` and `workouts` (added with `DEFAULT ''`, then every existing row set to `OWNER_ID`), `exercises.note`, and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
+- `OWNER_ID = "owner"`: the user who owned everything before users existed. `ensure_owner(conn)` runs on every startup: it upserts that row with `tailscale_login` from env `DASHBOARD_OWNER_LOGIN` (default `owner@localhost`) and `name` from `DASHBOARD_OWNER_NAME` (default `Owner`), `can_finance = 1`. Only the first insert copies `next_day_index` from `settings`; later startups only refresh name and login, so a wrong login is fixed by editing `.env` and restarting.
+- `find_user(conn, login)` → `User | None` (login match is `COLLATE NOCASE`).
+- `seed_plan(conn, user_id)`: the `SEED` days and exercises with fresh `uuid4().hex` ids (not the readable `push`/`bench` ids, because `workout_days.id` is unique across users and the workout log indexes on `exercise_id`), and `next_day_index = 0`. Uses my original weights (80 kg bench etc.), so a new person's plan looks like my old starter data.
+- Gym helpers: `day_ids(conn, user_id)` (ordered), `owns_day(conn, user_id, day_id)`, `get_next_index` / `set_next_index` (on `users`). Every gym function takes `user_id` first. Exercise functions check `owns_day` before anything else, so another person's day id gives `False` → 404 (400 for `reorder_exercises`). Exercises have no `user_id`: they belong to whoever owns their day.
 - The note is `''` when empty, never `NULL`: clearing a note sends `""`, which survives the PATCH route's `exclude_none=True` (a `None` would mean "not changing this field").
 - Tables:
-  - `workout_days (id, name, position)`
+  - `users (id, name, tailscale_login UNIQUE COLLATE NOCASE, can_finance, next_day_index)`. My row is `id = 'owner'`; others get a `uuid4().hex` id from `add_user.py`.
+  - `workout_days (id, user_id, name, position)`. `position` is per user.
   - `exercises (id, day_id, name, weight REAL, sets, reps, position, active, note TEXT NOT NULL DEFAULT '', PRIMARY KEY (day_id, id))`
-  - `settings (key, value)`, which holds `next_day_index`
+  - `settings (key, value)`: legacy. Its `next_day_index` row was copied into `users` once and is no longer read or written (stale). Can be dropped some day.
   - `bills (id, name, amount_cents, due_day, position, active, start_period)`: the recurring thing. `due_day` is 1–31. `position` only breaks ties between bills on the same due day. `start_period` (`"YYYY-MM"`) is the first month the bill appears in; `add_bill` sets it to the period the client was viewing, so adding a bill while looking at December schedules it from December.
   - `payments (bill_id REFERENCES bills, period, amount_cents, paid_at, PRIMARY KEY (bill_id, period))`: one row per bill per month it was paid. `period` is `"YYYY-MM"`, `paid_at` is a UTC ISO timestamp, and `amount_cents` is a **snapshot** of what was paid, so raising a bill's amount doesn't rewrite history.
-  - `workouts (id INTEGER PRIMARY KEY, day_id, day_name, completed_at)`: one row per completed session. `completed_at` is a UTC ISO timestamp.
+  - `workouts (id INTEGER PRIMARY KEY, user_id, day_id, day_name, completed_at)`: one row per completed session. `completed_at` is a UTC ISO timestamp. `log_workout(conn, day_id)` copies `user_id` and `day_name` from the day itself (`INSERT ... SELECT`).
   - `workout_exercises (workout_id REFERENCES workouts, exercise_id, exercise_name, position, sets, reps, weight REAL, note, PRIMARY KEY (workout_id, exercise_id))`, plus index `workout_exercises_by_exercise (exercise_id)` for future per-exercise history queries. **No foreign key to `exercises`** and the name is copied, so renaming or deleting an exercise never blocks or rewrites history.
-- `next_day_index` is a **position** in the `ORDER BY position` list, not a day id. Every function that changes the list of days fixes it up: `delete_day` lowers it by one if the deleted day came before it (deleting the current day lets the following day slide into its place), then takes it `% count`; `reorder_days` remembers which day it pointed to and looks that day up again in the new order. `load_plan` also clamps it `% len(days)` as a safety net, because the frontend reads `plan.days[plan.nextDayIndex]` directly. Storing a day id instead would avoid the fix-ups; not done because these three places cover it.
-- `add_day` appends at `MAX(position) + 1` with a `uuid4().hex` id and an empty pool. `delete_day` deletes the day's exercises and the day in one transaction, refuses the last remaining day, and returns `None`, `"not found"` or `"last day"` (→ 404 / 400). History survives because `workout_exercises` copies names and has no foreign key.
-- `complete_workout(conn, day_id=None)` logs the given day, or without one the day at `next_day_index` (what old clients send), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then sets `next_day_index` to the position after the logged day. Returns `False` (→ 404) for an unknown day. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
+- `next_day_index` (per user, in `users`) is a **position** in that user's `ORDER BY position` list, not a day id. Every function that changes the list of days fixes it up: `delete_day` lowers it by one if the deleted day came before it (deleting the current day lets the following day slide into its place), then takes it `% count`; `reorder_days` remembers which day it pointed to and looks that day up again in the new order. `load_plan` also clamps it `% len(days)` as a safety net, because the frontend reads `plan.days[plan.nextDayIndex]` directly. Storing a day id instead would avoid the fix-ups; not done because these three places cover it.
+- `add_day(conn, user_id, name)` appends at that user's `MAX(position) + 1` with a `uuid4().hex` id and an empty pool. `delete_day` deletes the day's exercises and the day in one transaction, refuses the last remaining day, and returns `None`, `"not found"` or `"last day"` (→ 404 / 400). History survives because `workout_exercises` copies names and has no foreign key.
+- `complete_workout(conn, user_id, day_id=None)` logs the given day (must be that user's), or without one the day at `next_day_index` (what old clients send), calls `log_workout` (one `INSERT` into `workouts`, then `INSERT ... SELECT` of that day's `active = 1` exercises), then sets `next_day_index` to the position after the logged day. Returns `False` (→ 404) for an unknown day. All in one transaction. It logs on Complete rather than on every edit, because edits are noisy (typos, corrections) and Complete means it was actually done. Rough size: ~100 KB a year, so nothing is ever pruned. Nothing reads the log yet; for analysis, open a backup `.db` with Python/pandas.
 - Money is integer cents everywhere, including the API.
 - `load_month(conn, period)`: a `LEFT JOIN` from bills to that period's payments (the period condition sits in `ON`, not `WHERE`, or unpaid bills would vanish). Returns active bills whose `start_period <= period` plus any bill paid that month (a payment always shows, even before the start or after deactivation), ordered by `p.bill_id IS NOT NULL, p.paid_at, b.due_day, b.position` (unpaid first by due day, then paid by when they were paid; each key only breaks ties in the one before it), plus `inactive`: every deactivated bill, ordered by name (`COLLATE NOCASE`).
 - `mark_paid` uses `INSERT ... ON CONFLICT (bill_id, period) DO NOTHING`, so marking twice keeps the first payment and timestamp. `mark_unpaid` deletes the row; unpaying an unpaid bill isn't an error. Both return `False` (→ 404) only when the bill doesn't exist.
 - `update_bill` follows the `update_exercise` pattern with its own `BILL_EDITABLE_COLUMNS` whitelist. Bills are never deleted, only deactivated (foreign keys would block deleting a bill with payments anyway).
 - `?` placeholders everywhere. The dynamic `SET` clause in `update_exercise` only takes column names from a fixed `EDITABLE_COLUMNS` set.
 
-**Endpoints** (every gym mutation returns the full `GymPlan`; every finance endpoint returns the `FinanceMonth` for the period the client is viewing)
+**Identity** (`main.py`)
+- `current_user(request)` is a FastAPI dependency: reads the `Tailscale-User-Login` header (set by `tailscale serve`), falling back to env `DASHBOARD_DEV_USER` for local development only (never set in Docker), and looks it up with `find_user`. No login → 401 "Not signed in"; unknown login → 401 "Unknown user". `CurrentUser = Annotated[User, Depends(current_user)]`; every gym route has `user: CurrentUser` and passes `user.id` to `db.py`.
+- This is safe **only because the container listens on `127.0.0.1`**: if port 8010 were reachable over the tailnet, anyone could send the header themselves. `tailscale serve` overwrites it for requests that go through it.
+- `finance_user` dependency: 403 unless `user.can_finance`. All finance routes sit on `finance = APIRouter(prefix="/finance", dependencies=[Depends(finance_user)])`, included with `app.include_router(finance)` before the static mount.
+- `User` model (`models.py`): `id, name, can_finance`.
+
+**Endpoints** (every gym mutation returns the full `GymPlan` **of the user asking**; every finance endpoint returns the `FinanceMonth` for the period the client is viewing. Everything except `/health` needs a known user.)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Health check |
+| GET | `/health` | Health check (no user needed) |
+| GET | `/me` | The user asking: `{ id, name, canFinance }` |
 | GET | `/gym/plan` | Full plan |
 | PATCH | `/gym/days/{day_id}/exercises/{exercise_id}` | Change any of name, weight, sets, reps, active, note |
 | POST | `/gym/days/{day_id}/exercises` | Add an exercise to the pool |
@@ -186,7 +206,7 @@ dashboard/
 | DELETE | `/gym/days/{day_id}` | Delete a day and its exercises (404 unknown, 400 if it's the last day) |
 | PUT | `/gym/days/order` | New day order (`{ dayIds }`); must list every day exactly once; keeps the same day as next |
 | POST | `/gym/complete` | Body `{ dayId }`: log that day's active exercises, then make the day after it next. Without a body: the current next day (older desktop builds) |
-| GET | `/finance/months/{period}` | Bills for that month with their payment (or `null`), plus `inactive` |
+| GET | `/finance/months/{period}` | (all `/finance/...`: 403 without `canFinance`) Bills for that month with their payment (or `null`), plus `inactive` |
 | POST | `/finance/bills?period=` | Add a bill (name, amountCents ≥ 0, dueDay 1–31), starting in `period` |
 | PATCH | `/finance/bills/{bill_id}?period=` | Change any of name, amountCents, dueDay, active |
 | PUT | `/finance/months/{period}/payments/{bill_id}` | Mark paid (idempotent; copies the bill's current amount) |
@@ -196,16 +216,18 @@ dashboard/
 - `period` is validated with `PERIOD_PATTERN` (`^\d{4}-(0[1-9]|1[0-2])$`) through reusable `Annotated` types, `PeriodInPath` and `PeriodInQuery`. FastAPI's `Path` is imported as `PathParam` because `main.py` already imports `pathlib.Path`.
 - **The client chooses the month**, not the server. The container runs in UTC, so the server's "today" would reach the next month an hour late (two in summer). Each device sends its own local month instead.
 - Per-change endpoints were chosen deliberately, so two devices editing different exercises never overwrite each other.
-- CORS allows `http://localhost:1420`, `tauri://localhost` and `http://tauri.localhost` (the desktop). The phone needs no CORS because the page and API share an address.
+- CORS allows `http://localhost:1420`, `tauri://localhost` and `http://tauri.localhost` (the desktop). The phones need no CORS because the page and API share an address. The desktop's requests also go through `tailscale serve`, so they carry my identity.
 - The built frontend is mounted at `/`, as the **last** thing in `main.py`, only if `server/static/` exists. It uses `FrontendFiles`, a `StaticFiles` subclass that adds `Cache-Control`: files under `assets/` get `public, max-age=31536000, immutable` (Vite puts a content hash in their names, so a new build means new names), and everything else, mainly `index.html`, gets `no-cache` (the browser keeps it but checks with the server each time, usually getting a `304`). Without this the phone's home-screen app kept showing an old `index.html` after a deploy.
 
 ### Deployment
 
 - **Dockerfile:** stage 1 `node:24-slim` runs `npm ci` and `npm run build`; stage 2 `python:3.12-slim` with uv `0.13.1` copies the server code and the built frontend into `./static`, then runs `fastapi run main.py --port 8000`.
-- **Compose:** `restart: unless-stopped`, volume `./data:/data`, ports `"${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"`. The homelab's `server/.env` (gitignored, machine-specific) sets `BIND_ADDRESS` to its Tailscale IP and `API_PORT=8010`; without a `.env` (e.g. on the PC) it falls back to `127.0.0.1:8000`. Nothing on the homelab is edited outside the repo, so `git pull` there stays clean.
+- **Compose:** `restart: unless-stopped`, volume `./data:/data`, ports `"${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"`, and `environment:` passes `DASHBOARD_OWNER_LOGIN` and `DASHBOARD_OWNER_NAME` through from `.env`. The homelab's `server/.env` (gitignored, machine-specific) has `BIND_ADDRESS=127.0.0.1`, `API_PORT=8010`, `DASHBOARD_OWNER_LOGIN=<my Tailscale login>` (check with `tailscale whois $(tailscale ip -4)` on the PC; it's my Gmail address, not the Hotmail one) and `DASHBOARD_OWNER_NAME=Frandy`. Without a `.env` (e.g. on the PC) it falls back to `127.0.0.1:8000`. Nothing on the homelab is edited outside the repo, so `git pull` there stays clean. Compose (`docker compose ...`) must run in `~/dashboard/server`; `git pull` works anywhere in the repo.
+- **Tailscale serve** (homelab, set up once on 2026-11-18): `sudo tailscale serve --bg http://127.0.0.1:8010` → `https://homelab1.<tailnet>.ts.net`. MagicDNS and HTTPS certificates are on in the admin console. `tailscale serve status` shows it.
+- **Adding a person:** invite them in the admin console (Users), they install Tailscale on their phone and log in **into my tailnet** (her phone first ended up in its own tailnet and wasn't in `tailscale status`; she had to switch tailnets in the app). Their login is on the Users page (or `tailscale whois <their IP>` on the homelab). Then on the homelab: `docker compose exec api python add_user.py <login> "<name>"` (the name is required; without it the script prints its help). No exit node needed on their phone. An ACL should limit them to `homelab1:443`.
 - **Updating the phone version or the API:** commit and push on the PC, then on the homelab: `cd ~/dashboard/server && git pull && docker compose up -d --build`.
 - **Updating the desktop app:** `npm run tauri build -- --no-bundle` on the PC, then restart the app. The binary is at `src-tauri/target/release/dashboard`.
-- Local development: `uv run fastapi dev main.py` in `server/` for a local API on port 8000 (uses `server/dashboard.db` on the PC, not homelab data), and `VITE_API_URL=http://localhost:8000 npm run tauri dev` in the repo root. A variable set in the shell beats the one in `.env`, so the file never has to be edited or changed back.
+- Local development: `DASHBOARD_DEV_USER=owner@localhost uv run fastapi dev main.py` in `server/` for a local API on port 8000 (uses `server/dashboard.db` on the PC, not homelab data; without `DASHBOARD_DEV_USER` every gym and finance request gets 401), and `VITE_API_URL=http://localhost:8000 npm run tauri dev` in the repo root. A variable set in the shell beats the one in `.env`, so the file never has to be edited or changed back. To test as another person locally, set `DASHBOARD_DEV_USER` to their login.
 
 **Window rule** in `~/.config/hypr/input.lua`:
 ```lua
@@ -230,44 +252,65 @@ hl.window_rule({
 - Pressing Enter twice quickly in the "New bill" form creates two identical bills (each Enter is a separate POST). Harmless (deactivate the copy); a `saving` flag would prevent it.
 - A bill's start month can't be changed in the UI. A bill added while viewing the wrong month needs `UPDATE bills SET start_period = ...` by hand.
 - Deactivating a bill removes it from every month it wasn't paid in, including past ones (there's no `end_period`).
+- **Not confirmed:** whether the Tailscale ACL actually limits her to `homelab1:443`. Test: my PC's Tailscale IP (`tailscale ip -4` on the PC) must not load on her phone; check the policy in the admin console (in my example, `homelab1:443` only matches if `homelab1` is defined under `hosts` or written as its Tailscale IP).
+- **Not confirmed:** that her edits stay separate on the live server. She saw what looked like my old gym data; that is almost certainly the `SEED` starter plan (same as my original data). Check on the homelab that her days have random ids and her `user_id` (query in the "Next step" section), and that changing a weight on her phone doesn't change mine.
+- New people start with my `SEED` weights (80 kg bench etc.), which looks like someone's real data. Could start them at 0 kg (two-line change in `seed_plan`).
+- Reordering another person's exercises answers 400 ("Order must list…") instead of 404. Nothing leaks; just a less precise message.
+- People can only be added from the command line (`add_user.py`); removing someone, changing their login or access, or giving them finance is SQL only.
+- To-do and habits are hidden for non-owners via `canFinance` (shortcut, see `App.tsx`).
+- `settings.next_day_index` is a stale leftover since the move to `users.next_day_index`.
+- The README says "my girlfriend" (intro and architecture diagram) in a public repo; asked whether to make it neutral, no answer yet.
 - The README doesn't mention the swipeable exercise cards or the note preview yet (Features, "On the phone, each exercise is a collapsed card…", line ~26; and the "Swipe without JavaScript" design decision only talks about day rows).
 - Days can't be renamed in the UI (only added, deleted and reordered). A typo means delete and re-add, or `UPDATE workout_days SET name = ...`.
 - Escape inside an opened gym day closes the whole tile instead of going back to the days screen (`App`'s window listener handles Escape).
-- The gym days work (`a447223`..`ee3910f`) is deployed on the homelab. Not confirmed: whether the desktop app was rebuilt afterwards.
 - In a month other than the current one, the summary still says "All 9 paid this month".
-- Not confirmed: whether the desktop app was rebuilt (`npm run tauri build -- --no-bundle`) after the month-switching deploy, and how the month bar looks on the phone.
+- Not confirmed: how the finance month bar looks on the phone, and whether the swipeable day/exercise cards were tried on the real phone (they are deployed since 2026-11-18).
 - Marking a bill paid always records its current amount. Bills that vary month to month (energy) would need an optional amount on the PUT.
 - Notes on the plan are one current note per exercise, but each completed workout now keeps a copy of the notes in `workout_exercises`.
 - Pressing "Complete workout" without training logs a fake session. A very fast double tap could still send two before the view switches back to the days screen. There's no way to delete a log entry yet; fix with SQL if needed, or add an undo later.
 - Confirm the fixed cron actually runs on its own: after 03:00 UTC on 2026-11-08 there should be a `dashboard-..._0300.db` in `~/dashboard/server/data/backups/` and a `~/dashboard-backup.log` on the homelab. The rsync timer on the PC had been "succeeding" while there was nothing new to copy, so check the files, not the service status.
 - The Tauri template's leftover `greet` command is still in `src-tauri/src/lib.rs`.
-- No authentication on the API. Acceptable while only my own devices are on the tailnet; reconsider before sharing access with anyone.
+- Identity depends on everyone being on my tailnet. Fine for a few people; friends without Tailscale or a separate gym app would need real logins (replace `current_user()`).
 - The phone page needs a network connection. No offline support or proper PWA manifest yet.
 - Things I'm not 100% sure were completed, so worth checking:
   - whether the dashboard autostarts on login via `~/.config/hypr/autostart.lua`
-  - whether a homelab reboot test passed. If the container fails to bind after reboot, the fix is `net.ipv4.ip_nonlocal_bind = 1` in `/etc/sysctl.d/`.
+  - whether everything comes back after a homelab reboot, now that it depends on `tailscale serve --bg` (should persist) and the container binding to `127.0.0.1` (the old `ip_nonlocal_bind` concern for binding to the Tailscale IP no longer applies).
 
 ## Roadmap
 
-1. README screenshots (next, see below)
-2. To-do tile
+1. README screenshots (after finishing the sharing loose ends, see below)
+2. To-do tile (decide then whether it's per person)
 3. Habit tracker tile
 4. Finance extras: a custom amount when marking paid; maybe editing a bill's start month
 5. Gym progression: the log is done and collecting data. Still to do, when wanted: a history endpoint (e.g. `GET /gym/days/{day_id}/exercises/{exercise_id}/history`, oldest first), a small SVG weight-over-time chart in the opened card, and maybe a one-off backfill from old backup snapshots. Not wanted yet (2026-11-07): for now it's enough that the data is stored and backed up
 6. PWA / offline support for the phone, queuing changes when there's no signal at the gym
 7. Follow the active Omarchy theme colours automatically
-8. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
+8. More people: other friends with their own screen; maybe a more interactive gym tile, or a separate gym app (would need real logins instead of Tailscale identity)
+9. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
 
-## Next step: check the phone, then README screenshots
+## Next step: finish the sharing loose ends, then README screenshots
 
-- **Phone check.** The swipeable day cards (`0aea5c4`) and exercise cards with a note preview (`9a46c93`) are pushed, but it's not confirmed that the homelab was redeployed since (`cd ~/dashboard/server && git pull && docker compose up -d --build`) or that they were tried on the real phone (only checked in a phone-sized headless Chromium). Also rebuild the desktop app (`npm run tauri build -- --no-bundle`) if that wasn't done after the gym days work.
-- **Screenshots.** The README text is up to date (`2d1b269`). An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone; the gym shot could show the days screen, the phone shot a swiped day card or an open exercise card), put them in `docs/`, and turn the comment into real image links.
+Where it stopped (2026-11-18): sharing is deployed and working. Homelab runs `c5413c4`, my desktop app is rebuilt against the https URL, my phone shortcut was to be re-added, and her phone shows only the gym tile.
+
+- **Commit the README and `.env.example`.** Both are edited but **uncommitted** (README: "Several people" feature, new architecture diagram, three design decisions on identity/authorization/per-person data, deployment with `tailscale serve` and `add_user.py`, local `DASHBOARD_DEV_USER`, limitations, roadmap). Decide first whether "my girlfriend" stays in the public README. Suggested message: "README: shared gym tile with Tailscale identity".
+- **Check her data is separate** (homelab, `~/dashboard/server`):
+  `docker compose exec api python -c "import sqlite3; c = sqlite3.connect('/data/dashboard.db'); [print(r) for r in c.execute('SELECT u.name, d.name, d.id FROM workout_days d JOIN users u ON u.id = d.user_id ORDER BY u.name, d.position')]"`
+  My days should have ids `push`/`pull`/`legs`, hers long random ids. Then change a weight on her phone and confirm mine doesn't change.
+- **Check the ACL** (see Known issues).
+- Maybe: start new people at 0 kg; open the gym directly when it's someone's only tile.
+- **Screenshots.** The README text is up to date apart from the uncommitted sharing changes. An HTML comment near the top of `README.md` lists the planned images: `docs/grid.png`, `docs/gym.png`, `docs/finance.png`, `docs/phone.png`. Take them (desktop and phone; the gym shot could show the days screen, the phone shot a swiped day card or an open exercise card), put them in `docs/`, and turn the comment into real image links.
 
 After that: the to-do tile (roadmap item 2).
 
 ## Session log
 
 (newest first)
+
+**2026-11-18 (sharing the gym tile)**
+- My girlfriend now uses the gym tile on her phone with her own plan. She was invited into my tailnet; `tailscale serve` on the homelab now fronts the API (HTTPS, `https://homelab1.<tailnet>.ts.net`) and the container only listens on `127.0.0.1`, so the `Tailscale-User-Login` header can't be forged. Chosen over a secret link or passwords because everyone needs Tailscale anyway; identity lives only in `current_user()`, so real logins can replace it if friends or a separate app come later.
+- Backend: `users` table, `/me`, finance on a 403-guarded router (`23260dc`); per-user days, exercises, "Next" and workout log, `add_user.py`, starter plans with random ids (`0a90602`). Frontend: `App` loads `/me` first, finance (and the placeholders) hidden for others (`c5413c4`). All tested on a copy of the 2026-11-17 snapshot (my plan identical before/after, cross-user edits 404/400, finance 403) and in phone-sized headless Chromium. Pushed and deployed.
+- Deploy hiccups: "Unknown user" because `.env` had my Hotmail address instead of my real Tailscale login (the Gmail one) (found by comparing `printenv` in the container with `tailscale whois`; fixed by editing `.env` + `docker compose up -d`, since `ensure_owner` refreshes the login on every start). Her phone at first landed in its own tailnet. The pre-migration backup step was skipped; the 03:00 snapshot from that day predates it.
+- README and `.env.example` updated for all this but not committed yet.
 
 **2026-11-07 (late night, exercise cards)**
 - Phone exercise cards now work like the day cards (`9a46c93`): the card fills the width with the name, "3 × 8 · 80 kg" and a two-line note preview on the right; swiping left reveals ▲▼ and +/−; tapping still opens sets/reps/weight/full note. Done with two `display: contents` wrappers (`.ex-card`, `.ex-actions`), so the desktop row is unchanged (checked side by side in headless Chromium at phone and desktop width). Pushed; homelab redeploy and a real-phone check not confirmed.
