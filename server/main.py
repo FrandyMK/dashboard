@@ -105,85 +105,87 @@ def health() -> dict[str, str]:
 
 
 @app.get("/gym/plan")
-def get_gym_plan() -> GymPlan:
+def get_gym_plan(user: CurrentUser) -> GymPlan:
     with connect() as conn:
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.post("/gym/days")
-def post_day(new: NewDay) -> GymPlan:
+def post_day(user: CurrentUser, new: NewDay) -> GymPlan:
     with connect() as conn:
         name = new.name.strip()
         if not name:
             raise HTTPException(status_code=422, detail="Name can't be empty")
-        add_day(conn, name)
-        return load_plan(conn)
+        add_day(conn, user.id, name)
+        return load_plan(conn, user.id)
 
 
 @app.put("/gym/days/order")
-def put_day_order(order: DayOrder) -> GymPlan:
+def put_day_order(user: CurrentUser, order: DayOrder) -> GymPlan:
     with connect() as conn:
-        if not reorder_days(conn, order.day_ids):
+        if not reorder_days(conn, user.id, order.day_ids):
             raise HTTPException(
                 status_code=400, detail="Order must list every day exactly once"
             )
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.delete("/gym/days/{day_id}")
-def remove_day(day_id: str) -> GymPlan:
+def remove_day(user: CurrentUser, day_id: str) -> GymPlan:
     with connect() as conn:
-        problem = delete_day(conn, day_id)
+        problem = delete_day(conn, user.id, day_id)
         if problem == "not found":
             raise HTTPException(status_code=404, detail="Day not found")
         if problem == "last day":
             raise HTTPException(status_code=400, detail="Can't delete the last day")
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.patch("/gym/days/{day_id}/exercises/{exercise_id}")
-def patch_exercise(day_id: str, exercise_id: str, update: ExerciseUpdate) -> GymPlan:
+def patch_exercise(
+    user: CurrentUser, day_id: str, exercise_id: str, update: ExerciseUpdate
+) -> GymPlan:
     with connect() as conn:
         changes = update.model_dump(exclude_none=True)
-        if not update_exercise(conn, day_id, exercise_id, changes):
+        if not update_exercise(conn, user.id, day_id, exercise_id, changes):
             raise HTTPException(status_code=404, detail="Exercise not found")
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.delete("/gym/days/{day_id}/exercises/{exercise_id}")
-def remove_exercise(day_id: str, exercise_id: str) -> GymPlan:
+def remove_exercise(user: CurrentUser, day_id: str, exercise_id: str) -> GymPlan:
     with connect() as conn:
-        if not delete_exercise(conn, day_id, exercise_id):
+        if not delete_exercise(conn, user.id, day_id, exercise_id):
             raise HTTPException(status_code=404, detail="Exercise not found")
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.post("/gym/days/{day_id}/exercises")
-def post_exercise(day_id: str, new: NewExercise) -> GymPlan:
+def post_exercise(user: CurrentUser, day_id: str, new: NewExercise) -> GymPlan:
     with connect() as conn:
-        if not add_exercise(conn, day_id, new.name):
+        if not add_exercise(conn, user.id, day_id, new.name):
             raise HTTPException(status_code=404, detail="Day not found")
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.put("/gym/days/{day_id}/order")
-def put_order(day_id: str, order: ExerciseOrder) -> GymPlan:
+def put_order(user: CurrentUser, day_id: str, order: ExerciseOrder) -> GymPlan:
     with connect() as conn:
-        if not reorder_exercises(conn, day_id, order.exercise_ids):
+        if not reorder_exercises(conn, user.id, day_id, order.exercise_ids):
             raise HTTPException(
                 status_code=400,
                 detail="Order must list every exercise of this day exactly once",
             )
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 @app.post("/gym/complete")
-def post_complete(completed: CompletedWorkout | None = None) -> GymPlan:
+def post_complete(user: CurrentUser, completed: CompletedWorkout | None = None) -> GymPlan:
     with connect() as conn:
         day_id = completed.day_id if completed else None
-        if not complete_workout(conn, day_id):
+        if not complete_workout(conn, user.id, day_id):
             raise HTTPException(status_code=404, detail="Day not found")
-        return load_plan(conn)
+        return load_plan(conn, user.id)
 
 
 # --- Finance ---

@@ -127,9 +127,8 @@ def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
         migrate(conn)
-        count = conn.execute("SELECT COUNT(*) FROM workout_days").fetchone()[0]
-        if count == 0:
-            seed(conn)
+        if not day_ids(conn, OWNER_ID):
+            seed_plan(conn, OWNER_ID)
 
 
 def migrate(conn):
@@ -188,36 +187,74 @@ def find_user(conn, login: str) -> User | None:
     return User(id=row["id"], name=row["name"], can_finance=bool(row["can_finance"]))
 
 
-def seed(conn):
-    for day_pos, (day_id, day_name, exercises) in enumerate(SEED):
+def seed_plan(conn, user_id: str) -> None:
+    # A starter plan for someone with no days yet. Fresh random ids, not the
+    # readable ones in SEED: workout_days.id is unique across all users, and
+    # the workout log looks exercises up by id, so ids must never be shared.
+    for day_pos, (_, day_name, exercises) in enumerate(SEED):
+        day_id = uuid4().hex
         conn.execute(
             "INSERT INTO workout_days (id, user_id, name, position) VALUES (?, ?, ?, ?)",
-            (day_id, OWNER_ID, day_name, day_pos),
+            (day_id, user_id, day_name, day_pos),
         )
-        for ex_pos, (ex_id, name, weight, sets, reps, active) in enumerate(exercises):
+        for ex_pos, (_, name, weight, sets, reps, active) in enumerate(exercises):
             conn.execute(
                 """INSERT INTO exercises
                    (id, day_id, name, weight, sets, reps, position, active)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (ex_id, day_id, name, weight, sets, reps, ex_pos, int(active)),
+                (uuid4().hex, day_id, name, weight, sets, reps, ex_pos, int(active)),
             )
-    conn.execute("INSERT INTO settings (key, value) VALUES ('next_day_index', '0')")
+    set_next_index(conn, user_id, 0)
 
 
-def load_plan(conn) -> GymPlan:
+# --- Gym: every function only sees the days of the given user. ---
+# Exercises have no user_id of their own: they belong to whoever owns their day,
+# so checking the day is enough.
+
+
+def day_ids(conn, user_id: str) -> list[str]:
+    return [
+        row["id"]
+        for row in conn.execute(
+            "SELECT id FROM workout_days WHERE user_id = ? ORDER BY position",
+            (user_id,),
+        )
+    ]
+
+
+def owns_day(conn, user_id: str, day_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM workout_days WHERE id = ? AND user_id = ?", (day_id, user_id)
+    ).fetchone()
+    return row is not None
+
+
+def get_next_index(conn, user_id: str) -> int:
+    row = conn.execute(
+        "SELECT next_day_index FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    return row["next_day_index"] if row else 0
+
+
+def set_next_index(conn, user_id: str, index: int) -> None:
+    conn.execute("UPDATE users SET next_day_index = ? WHERE id = ?", (index, user_id))
+
+
+def load_plan(conn, user_id: str) -> GymPlan:
     days = conn.execute(
-        "SELECT id, name FROM workout_days ORDER BY position"
+        "SELECT id, name FROM workout_days WHERE user_id = ? ORDER BY position",
+        (user_id,),
     ).fetchall()
     exercises = conn.execute(
-        "SELECT id, day_id, name, weight, sets, reps, active, note "
-        "FROM exercises ORDER BY position"
+        """SELECT e.id, e.day_id, e.name, e.weight, e.sets, e.reps, e.active, e.note
+           FROM exercises e JOIN workout_days d ON d.id = e.day_id
+           WHERE d.user_id = ?
+           ORDER BY e.position""",
+        (user_id,),
     ).fetchall()
-    setting = conn.execute(
-        "SELECT value FROM settings WHERE key = 'next_day_index'"
-    ).fetchone()
 
     # Clamped so a stale index can never point past the last day.
-    next_day_index = int(setting["value"]) if setting else 0
+    next_day_index = get_next_index(conn, user_id)
     return GymPlan(
         next_day_index=next_day_index % len(days) if days else 0,
         days=[
@@ -246,7 +283,12 @@ def load_plan(conn) -> GymPlan:
 EDITABLE_COLUMNS = {"name", "weight", "sets", "reps", "active", "note"}
 
 
-def update_exercise(conn, day_id: str, exercise_id: str, changes: dict) -> bool:
+def update_exercise(
+    conn, user_id: str, day_id: str, exercise_id: str, changes: dict
+) -> bool:
+    if not owns_day(conn, user_id, day_id):
+        return False
+
     fields = {k: v for k, v in changes.items() if k in EDITABLE_COLUMNS}
     if "active" in fields:
         fields["active"] = int(fields["active"])
@@ -266,11 +308,8 @@ def update_exercise(conn, day_id: str, exercise_id: str, changes: dict) -> bool:
     return cursor.rowcount == 1
 
 
-def add_exercise(conn, day_id: str, name: str) -> bool:
-    day = conn.execute(
-        "SELECT 1 FROM workout_days WHERE id = ?", (day_id,)
-    ).fetchone()
-    if day is None:
+def add_exercise(conn, user_id: str, day_id: str, name: str) -> bool:
+    if not owns_day(conn, user_id, day_id):
         return False
 
     next_position = conn.execute(
@@ -286,7 +325,9 @@ def add_exercise(conn, day_id: str, name: str) -> bool:
     return True
 
 
-def delete_exercise(conn, day_id: str, exercise_id: str) -> bool:
+def delete_exercise(conn, user_id: str, day_id: str, exercise_id: str) -> bool:
+    if not owns_day(conn, user_id, day_id):
+        return False
     cursor = conn.execute(
         "DELETE FROM exercises WHERE day_id = ? AND id = ?",
         (day_id, exercise_id),
@@ -294,7 +335,9 @@ def delete_exercise(conn, day_id: str, exercise_id: str) -> bool:
     return cursor.rowcount == 1
 
 
-def reorder_exercises(conn, day_id: str, exercise_ids: list[str]) -> bool:
+def reorder_exercises(conn, user_id: str, day_id: str, exercise_ids: list[str]) -> bool:
+    if not owns_day(conn, user_id, day_id):
+        return False
     existing = {
         row["id"]
         for row in conn.execute(
@@ -313,33 +356,27 @@ def reorder_exercises(conn, day_id: str, exercise_ids: list[str]) -> bool:
     return True
 
 
-def add_day(conn, name: str) -> None:
-    # A new day goes at the end of the rotation, with an empty pool.
+def add_day(conn, user_id: str, name: str) -> None:
+    # A new day goes at the end of this user's rotation, with an empty pool.
     next_position = conn.execute(
-        "SELECT COALESCE(MAX(position), -1) + 1 FROM workout_days"
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM workout_days WHERE user_id = ?",
+        (user_id,),
     ).fetchone()[0]
-    # Step 3 replaces OWNER_ID with the user who is asking.
     conn.execute(
         "INSERT INTO workout_days (id, user_id, name, position) VALUES (?, ?, ?, ?)",
-        (uuid4().hex, OWNER_ID, name, next_position),
+        (uuid4().hex, user_id, name, next_position),
     )
 
 
-def delete_day(conn, day_id: str) -> str | None:
+def delete_day(conn, user_id: str, day_id: str) -> str | None:
     # Returns None on success, or why it couldn't be deleted.
-    days = [
-        row["id"]
-        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
-    ]
+    days = day_ids(conn, user_id)
     if day_id not in days:
         return "not found"
     if len(days) == 1:
         return "last day"
 
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key = 'next_day_index'"
-    ).fetchone()
-    current = (int(row["value"]) if row else 0) % len(days)
+    current = get_next_index(conn, user_id) % len(days)
     deleted = days.index(day_id)
     # next_day_index is a position, so removing a day before the current one
     # shifts the current day down by one. If the current day itself is
@@ -351,39 +388,25 @@ def delete_day(conn, day_id: str) -> str | None:
     # The workout log keeps its own copies of names, so history survives.
     conn.execute("DELETE FROM exercises WHERE day_id = ?", (day_id,))
     conn.execute("DELETE FROM workout_days WHERE id = ?", (day_id,))
-    conn.execute(
-        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-        (str(current),),
-    )
+    set_next_index(conn, user_id, current)
     return None
 
 
-def reorder_days(conn, day_ids: list[str]) -> bool:
-    days = [
-        row["id"]
-        for row in conn.execute("SELECT id FROM workout_days ORDER BY position")
-    ]
-    # The new order must contain every day exactly once.
-    if len(day_ids) != len(days) or set(day_ids) != set(days):
+def reorder_days(conn, user_id: str, new_order: list[str]) -> bool:
+    days = day_ids(conn, user_id)
+    # The new order must contain every one of this user's days exactly once.
+    if len(new_order) != len(days) or set(new_order) != set(days):
         return False
 
     # next_day_index is a position, so remember which day it points to
     # and look that day up again in the new order.
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key = 'next_day_index'"
-    ).fetchone()
-    next_day = days[(int(row["value"]) if row else 0) % len(days)]
+    next_day = days[get_next_index(conn, user_id) % len(days)]
 
-    for position, day_id in enumerate(day_ids):
+    for position, day_id in enumerate(new_order):
         conn.execute(
             "UPDATE workout_days SET position = ? WHERE id = ?", (position, day_id)
         )
-    conn.execute(
-        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-        (str(day_ids.index(next_day)),),
-    )
+    set_next_index(conn, user_id, new_order.index(next_day))
     return True
 
 
@@ -406,34 +429,23 @@ def log_workout(conn, day_id: str) -> None:
     )
 
 
-def complete_workout(conn, day_id: str | None = None) -> bool:
+def complete_workout(conn, user_id: str, day_id: str | None = None) -> bool:
     # Logs the given day (or, without one, the next day in the rotation)
-    # and makes the day after it the next one. False if the day doesn't exist.
-    days = conn.execute(
-        "SELECT id, name FROM workout_days ORDER BY position"
-    ).fetchall()
+    # and makes the day after it the next one. False if the day doesn't exist
+    # or belongs to someone else.
+    days = day_ids(conn, user_id)
     if not days:
         return False
 
     if day_id is None:
-        row = conn.execute(
-            "SELECT value FROM settings WHERE key = 'next_day_index'"
-        ).fetchone()
-        current = (int(row["value"]) if row else 0) % len(days)
+        current = get_next_index(conn, user_id) % len(days)
+    elif day_id in days:
+        current = days.index(day_id)
     else:
-        ids = [d["id"] for d in days]
-        if day_id not in ids:
-            return False
-        current = ids.index(day_id)
+        return False
 
-    day = days[current]
-    log_workout(conn, day["id"])
-
-    conn.execute(
-        """INSERT INTO settings (key, value) VALUES ('next_day_index', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-        (str((current + 1) % len(days)),),
-    )
+    log_workout(conn, days[current])
+    set_next_index(conn, user_id, (current + 1) % len(days))
     return True
 
 
