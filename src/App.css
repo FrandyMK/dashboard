@@ -86,7 +86,8 @@ body {
 
 .exercise {
   display: grid;
-  grid-template-columns: 1fr 4rem 4rem 5.5rem 1.5rem 4.25rem 2rem 2rem;
+  /* name, sets, reps, weight, kg, ✎, ▲▼, +/−, ✕ */
+  grid-template-columns: 1fr 4rem 4rem 5.5rem 1.5rem 2rem 4.25rem 2rem 2rem;
   gap: 0.75rem;
   align-items: center;
   background: var(--tile-bg);
@@ -315,6 +316,43 @@ body {
 .reorder {
   display: flex;
   gap: 0.25rem;
+}
+
+/* The opened day's name with its ✎. */
+.day-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* This ✎ sits on the page background, so it gets the tile colour to stay visible. */
+.day-title .move {
+  background: var(--tile-bg);
+}
+
+.day-title .move:hover {
+  background: #3b4261;
+}
+
+/* The input that replaces a name while renaming it. */
+.name-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid #3b4261;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  min-width: 0;
+}
+
+.day-name-input {
+  font-size: 1.5em;
+  font-weight: bold;
+  background: var(--tile-bg);
+}
+
+.exercise input.ex-name-input {
+  text-align: left;
 }
 
 .move:disabled {
@@ -628,10 +666,10 @@ body {
 
   .ex-details-inner {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr auto auto;
     grid-template-areas:
-      "sets reps weight delete"
-      "note note note   note";
+      "sets reps weight rename delete"
+      "note note note   note   note";
     gap: 0.75rem;
     align-items: end;
     min-height: 0;
@@ -654,8 +692,15 @@ body {
   .field-weight {
     grid-area: weight;
   }
+  .ex-rename {
+    grid-area: rename;
+  }
   .ex-delete {
     grid-area: delete;
+  }
+  .exercise input.ex-name-input {
+    width: 100%;
+    min-height: 2.75rem;
   }
   .exercise input.ex-note {
     grid-area: note;

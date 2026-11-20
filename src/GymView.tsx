@@ -5,6 +5,7 @@ import {
   completeWorkout,
   deleteDay,
   deleteExercise,
+  renameDay,
   reorderDays,
   reorderExercises,
   updateExercise,
@@ -125,6 +126,53 @@ function NoteField({
   );
 }
 
+// A name input that only exists while renaming. Enter or clicking away saves
+// (trimmed, only if it changed and isn't empty); Escape cancels.
+function NameInput({
+  value,
+  className,
+  onCommit,
+  onDone,
+}: {
+  value: string;
+  className: string;
+  onCommit: (name: string) => void;
+  onDone: () => void;
+}) {
+  const [text, setText] = useState(value);
+  const cancelled = useRef(false);
+
+  function commit() {
+    const name = text.trim();
+    if (!cancelled.current && name && name !== value) onCommit(name);
+    onDone();
+  }
+
+  function handleKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") e.currentTarget.blur();
+    if (e.key === "Escape") {
+      // Stop the Escape here, so it doesn't also close the whole tile.
+      e.stopPropagation();
+      cancelled.current = true;
+      e.currentTarget.blur();
+    }
+  }
+
+  return (
+    <input
+      className={className}
+      type="text"
+      maxLength={100}
+      autoFocus
+      value={text}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={handleKey}
+    />
+  );
+}
+
 // One day opened from the days screen: today's workout and that day's pool.
 function DayView({ day, onChange, onBack }: DayProps) {
   const [newName, setNewName] = useState("");
@@ -133,6 +181,9 @@ function DayView({ day, onChange, onBack }: DayProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   // On the phone, one exercise at a time shows its fields; the rest show only their name.
   const [openExercise, setOpenExercise] = useState<string | null>(null);
+  // Which name is being edited: the day's, or one exercise's.
+  const [renamingDay, setRenamingDay] = useState(false);
+  const [renamingExercise, setRenamingExercise] = useState<string | null>(null);
 
   const inWorkout = day.exercises.filter((ex) => ex.active);
   const available = day.exercises.filter((ex) => !ex.active);
@@ -196,6 +247,7 @@ function DayView({ day, onChange, onBack }: DayProps) {
         <span />
         <span />
         <span />
+        <span />
       </li>
     );
   }
@@ -211,17 +263,26 @@ function DayView({ day, onChange, onBack }: DayProps) {
         {/* On the phone this is the card that fills the width; the buttons in
             .ex-actions sit off-screen until it's swiped left. */}
         <div className="ex-card">
-          <button
-            className="ex-name"
-            aria-expanded={isOpen}
-            onClick={() => setOpenExercise(isOpen ? null : ex.id)}
-          >
-            <span className="ex-title">{ex.name}</span>
-            <span className="ex-summary">
-              {ex.sets} × {ex.reps} · {ex.weight} kg
-            </span>
-            {ex.note && <span className="ex-note-preview">{ex.note}</span>}
-          </button>
+          {renamingExercise === ex.id ? (
+            <NameInput
+              className="name-input ex-name-input"
+              value={ex.name}
+              onCommit={(name) => update(ex, { name })}
+              onDone={() => setRenamingExercise(null)}
+            />
+          ) : (
+            <button
+              className="ex-name"
+              aria-expanded={isOpen}
+              onClick={() => setOpenExercise(isOpen ? null : ex.id)}
+            >
+              <span className="ex-title">{ex.name}</span>
+              <span className="ex-summary">
+                {ex.sets} × {ex.reps} · {ex.weight} kg
+              </span>
+              {ex.note && <span className="ex-note-preview">{ex.note}</span>}
+            </button>
+          )}
 
           <div className="ex-details">
             <div className="ex-details-inner">
@@ -242,6 +303,15 @@ function DayView({ day, onChange, onBack }: DayProps) {
                 />
               </label>
               <span className="unit">kg</span>
+              <span className="ex-rename">
+                <button
+                  className="move rename"
+                  title="Rename exercise"
+                  onClick={() => setRenamingExercise(ex.id)}
+                >
+                  ✎
+                </button>
+              </span>
               <span className="ex-delete">
                 {!ex.active && (
                   <button
@@ -298,7 +368,21 @@ function DayView({ day, onChange, onBack }: DayProps) {
       <button className="back" onClick={onBack}>
         ‹ All days
       </button>
-      <h2>{day.name}</h2>
+      {renamingDay ? (
+        <NameInput
+          className="name-input day-name-input"
+          value={day.name}
+          onCommit={(name) => run(() => renameDay(day.id, name))}
+          onDone={() => setRenamingDay(false)}
+        />
+      ) : (
+        <div className="day-title">
+          <h2>{day.name}</h2>
+          <button className="move rename" title="Rename day" onClick={() => setRenamingDay(true)}>
+            ✎
+          </button>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
 
       <h3 className="section-title">Today's workout</h3>
