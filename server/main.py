@@ -30,6 +30,7 @@ from db import (
     mark_paid,
     mark_unpaid,
     reorder_days,
+    rename_day,
     reorder_exercises,
     update_bill,
     update_exercise,
@@ -39,6 +40,7 @@ from models import (
     BillUpdate,
     CompletedWorkout,
     DayOrder,
+    DayUpdate,
     ExerciseOrder,
     ExerciseUpdate,
     FinanceMonth,
@@ -130,6 +132,17 @@ def put_day_order(user: CurrentUser, order: DayOrder) -> GymPlan:
         return load_plan(conn, user.id)
 
 
+@app.patch("/gym/days/{day_id}")
+def patch_day(user: CurrentUser, day_id: str, update: DayUpdate) -> GymPlan:
+    with connect() as conn:
+        name = update.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name can't be empty")
+        if not rename_day(conn, user.id, day_id, name):
+            raise HTTPException(status_code=404, detail="Day not found")
+        return load_plan(conn, user.id)
+
+
 @app.delete("/gym/days/{day_id}")
 def remove_day(user: CurrentUser, day_id: str) -> GymPlan:
     with connect() as conn:
@@ -147,6 +160,10 @@ def patch_exercise(
 ) -> GymPlan:
     with connect() as conn:
         changes = update.model_dump(exclude_none=True)
+        if "name" in changes:
+            changes["name"] = changes["name"].strip()
+            if not changes["name"]:
+                raise HTTPException(status_code=422, detail="Name can't be empty")
         if not update_exercise(conn, user.id, day_id, exercise_id, changes):
             raise HTTPException(status_code=404, detail="Exercise not found")
         return load_plan(conn, user.id)

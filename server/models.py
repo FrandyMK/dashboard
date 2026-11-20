@@ -47,6 +47,11 @@ class NewDay(CamelModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class DayUpdate(CamelModel):
+    # Only the name can change; order has its own endpoint.
+    name: str = Field(min_length=1, max_length=100)
+
+
 class CompletedWorkout(CamelModel):
     # Which day was done. Left out by older clients: then it's the next day.
     day_id: str | None = None

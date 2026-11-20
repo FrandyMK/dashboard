@@ -375,6 +375,15 @@ def add_day(conn, user_id: str, name: str) -> None:
     )
 
 
+def rename_day(conn, user_id: str, day_id: str, name: str) -> bool:
+    # The user_id in WHERE is the ownership check: another person's day changes nothing.
+    cursor = conn.execute(
+        "UPDATE workout_days SET name = ? WHERE id = ? AND user_id = ?",
+        (name, day_id, user_id),
+    )
+    return cursor.rowcount == 1
+
+
 def delete_day(conn, user_id: str, day_id: str) -> str | None:
     # Returns None on success, or why it couldn't be deleted.
     days = day_ids(conn, user_id)
