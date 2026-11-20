@@ -17,7 +17,7 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 
 **Gym tracker**
 - The tile shows the next workout day and its first exercise.
-- Opening it shows all my training days (push, pull, legs, or whatever I set up), with the next one in the rotation marked. Days can be added, deleted and reordered, and the order on screen is the rotation. On the phone, swiping a day left reveals its move and delete buttons, so the card fills the screen the rest of the time.
+- Opening it shows all my training days (push, pull, legs, or whatever I set up), with the next one in the rotation marked. Days can be added, renamed (✎ next to the name in an opened day), deleted and reordered, and the order on screen is the rotation. Exercises can be renamed the same way from their unfolded card. On the phone, swiping a day left reveals its move and delete buttons, so the card fills the screen the rest of the time.
 - Tapping a day opens it. Each day has a pool of every exercise I can do that day, collapsed by default to keep the screen calm. Exercises move into and out of today's workout without losing their sets, reps or last weight.
 - Sets, reps and weight are editable in place, and each exercise has a one-line note ("keep a straight back next time").
 - Reorder exercises, add new ones to the pool, and delete pool exercises (two clicks, so nothing disappears by accident).
@@ -230,7 +230,6 @@ These are known and deliberate for now:
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
 - **Marking a bill paid always records its current amount**, which doesn't suit bills that vary month to month. A bill's start month also can't be changed in the app.
-- **Training days can't be renamed** in the app, only added, deleted and reordered.
 - **Workout history is stored but not shown yet.** Every completed session is logged, but the app doesn't read the log back yet, so there's no progression graph in the app. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
 
 ## Roadmap
@@ -245,6 +244,7 @@ These are known and deliberate for now:
 - [ ] Habit tracker tile
 - [x] Finance: switch between months
 - [x] Gym: add, delete and reorder training days
+- [x] Gym: rename training days and exercises
 - [x] Share the gym tile: one plan per person, identity from Tailscale
 - [ ] Finance: custom amount when marking paid
 - [ ] Progression graphs in the gym tile
