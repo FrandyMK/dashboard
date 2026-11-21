@@ -277,7 +277,7 @@ hl.window_rule({
 - Identity depends on everyone being on my tailnet. Fine for a few people; friends without Tailscale or a separate gym app would need real logins (replace `current_user()`).
 - The phone page needs a network connection. No offline support or proper PWA manifest yet.
 - Things I'm not 100% sure were completed, so worth checking:
-  - whether the dashboard autostarts on login via `~/.config/hypr/autostart.lua`
+  - ~~whether the dashboard autostarts on login~~ Checked 2026-11-21: it does **not**. `~/.config/hypr/autostart.lua` has no dashboard entry; to be added if wanted (binary: `~/Projects/dashboard/src-tauri/target/release/dashboard`).
   - whether everything comes back after a homelab reboot, now that it depends on `tailscale serve --bg` (should persist) and the container binding to `127.0.0.1` (the old `ip_nonlocal_bind` concern for binding to the Tailscale IP no longer applies).
 
 ## Roadmap
@@ -312,6 +312,10 @@ After that: the to-do tile (roadmap item 2).
 (newest first)
 
 **2026-11-21 (workout recap, local LLM)**
+- Merged `workout-recap` into `master` (fast-forward, `d7ee373`), deployed on the homelab, and rebuilt and started the desktop app on the PC. The homelab repo's `origin` is now the SSH URL, so `git push` works there; git `user.name`/`user.email` still aren't set on the homelab.
+- Data cleanup (snapshot first: `server/data/backups/dashboard-2026-11-21_2115.db`): deleted her 6 empty logs (#17–20, #22, #23, all with zero exercises, from trying the tile on 19 Nov) and my 2 summary-test logs (#26: Chest Supported Row 63 → 100 kg; #28: Romanian deadlift 100 → 200 kg). Her real logs #21 and #25 were kept, and so was my #27; its recap was regenerated against #15. Not touched, since I wasn't sure: the identical Push day logs #12 and #14 (7 Nov, probably a duplicate), and Squat at 6 reps.
+- Her logs are from before the recap existed, so she sees no card until her next completed workout.
+- README: real example recap, a limitation about older logs having no recap, and the Ollama setup under Deployment.
 - Follow-up after first use: the recap card is now folded by default (tap to open), and the recap only covers what changed since the previous session, including sets and reps, not just weight. The "same weight N sessions in a row" facts are gone. Recaps for logs #24, #26 and #27 were regenerated with the new rules.
 - After "Complete workout", a background task asks the local model (Ollama, `qwen3:4b-instruct-8k`) to turn computed progress facts into a 1–2 sentence recap, stored in `workouts.recap` and shown above the days as "Last session · Leg day · Thu 19 Nov". New `server/llm.py` and `server/recap.py`; `httpx` is now an explicit dependency. Branch `workout-recap`, written by Claude and reviewed with me.
 - Tested on the homelab without logging fake sessions: facts and recap for my real log #24 (about 15 s), `/gym/plan` returns my recap and `null` for her login, and an unreachable Ollama only logs a warning. The homelab container was rebuilt from this branch, which also deployed the 2026-11-20 rename feature. The desktop app needs rebuilding on the PC to show the card.

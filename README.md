@@ -22,7 +22,7 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 - Sets, reps and weight are editable in place, and each exercise has a one-line note ("keep a straight back next time").
 - Reorder exercises, add new ones to the pool, and delete pool exercises (two clicks, so nothing disappears by accident).
 - "Complete workout" saves a log of that session (each exercise's sets, reps, weight and note, with the date), makes the day after it the next one, and goes back to the list of days. Changing a weight later never rewrites past sessions, so the long-term progression is kept.
-- A folded "Last session summary" sits above the days; tapping it opens a short recap written by a local LLM on the home server: "Chest supported row up to 100 kg. Preacher curl reps up to 6." It only mentions what changed since the previous session (weight, sets, reps, new exercises) and appears within a minute of completing.
+- A folded "Last session summary" sits above the days; tapping it opens a short recap written by a local LLM on the home server: "Added dumbbell curl incline at 14 kg, 2 sets of 5 reps. Preacher curl reps increased from 5 to 6." It only mentions what changed since the previous session (weight, sets, reps, new exercises) and appears within a minute of completing.
 - On the phone, each exercise is a collapsed card showing its name, a short "3 × 8 · 80 kg" summary and the move buttons. Tapping the name slides it open to edit the sets, reps, weight and note.
 
 **Monthly bills**
@@ -198,6 +198,15 @@ Deploying an update:
 cd ~/dashboard/server && git pull && docker compose up -d --build
 ```
 
+The workout recap needs [Ollama](https://ollama.com) running on the same server, publishing its default port 11434, with the model pulled. I run it as its own Docker stack (the `ollama/ollama` image), with `OLLAMA_MAX_LOADED_MODELS=1` because the server has 8 GB of RAM. The model is `qwen3:4b-instruct` with an 8k context:
+
+```bash
+docker exec ollama ollama pull qwen3:4b-instruct
+curl http://localhost:11434/api/create -d '{"model": "qwen3:4b-instruct-8k", "from": "qwen3:4b-instruct", "parameters": {"num_ctx": 8192}}'
+```
+
+The API finds it at `http://host.docker.internal:11434` (set up in `docker-compose.yml`). A different address or model can go in `server/.env` as `OLLAMA_URL` and `OLLAMA_MODEL`. Without Ollama everything else works, and sessions are just saved without a recap.
+
 Adding a person: invite them to the tailnet, give them an access rule that only allows the dashboard server, and add them with their login exactly as Tailscale shows it (the Users page in the admin console):
 
 ```bash
@@ -239,7 +248,8 @@ These are known and deliberate for now:
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
 - **Marking a bill paid always records its current amount**, which doesn't suit bills that vary month to month. A bill's start month also can't be changed in the app.
-- **Workout history is mostly not shown yet.** Every completed session is logged, and the recap compares the latest one with earlier sessions, but there's no progression graph in the app yet. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
+- **Recaps only exist from when the feature arrived.** A recap is written when "Complete workout" is pressed, so sessions logged before 21 November 2026 have none, and someone who hasn't trained since sees no recap card. A session is compared with the previous log of each exercise, so the first time someone trains a day, every exercise counts as new and the recap just lists them.
+- **Workout history is mostly not shown yet.** Every completed session is logged, and the recap compares the latest one with the session before it, but there's no progression graph in the app yet. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
 
 ## Roadmap
 
