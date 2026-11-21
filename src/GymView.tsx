@@ -426,8 +426,10 @@ function DayView({ day, onChange, onBack }: DayProps) {
 }
 
 // The local model's short recap of the last logged workout, shown above the
-// days. It's written in the background after "Complete workout", so it
-// appears on the next refresh (on focus, or within a minute).
+// days. Folded by default to keep the screen calm; tapping the header opens
+// it. A native <details>, like the exercise pool, so no state is needed.
+// It's written in the background after "Complete workout", so it appears on
+// the next refresh (on focus, or within a minute).
 function RecapCard({ recap }: { recap: Recap }) {
   const when = new Date(recap.completedAt).toLocaleDateString(undefined, {
     weekday: "short",
@@ -435,12 +437,12 @@ function RecapCard({ recap }: { recap: Recap }) {
     month: "short",
   });
   return (
-    <section className="recap">
-      <span className="recap-label">
-        Last session · {recap.dayName} · {when}
-      </span>
+    <details className="recap">
+      <summary className="recap-label">
+        Last session summary · {recap.dayName} · {when}
+      </summary>
       <p className="recap-text">{recap.text}</p>
-    </section>
+    </details>
   );
 }
 

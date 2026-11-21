@@ -479,18 +479,24 @@ def complete_workout(conn, user_id: str, day_id: str | None = None) -> int | Non
 # The numbers are worked out here, in code. The LLM (recap.py) only turns
 # these facts into a sentence or two, because small models get arithmetic wrong.
 
-# How many earlier sessions of an exercise to compare with.
-HISTORY_LENGTH = 4
-
-
 def kg(weight: float) -> str:
     # 82.5 -> "82.5 kg", 80.0 -> "80 kg"
     return f"{weight:g} kg"
 
 
-def progress_facts(conn, workout_id: int) -> tuple[str, list[str]] | None:
-    # The day's name, and one plain-English fact per exercise in this log
-    # comparing it with that person's earlier logs of the same exercise.
+def describe_change(label: str, before: float, now: float, unit=str) -> str | None:
+    # "weight up 2.5 kg (80 kg → 82.5 kg)", or None if it didn't change.
+    if now == before:
+        return None
+    direction = "up" if now > before else "down"
+    return f"{label} {direction} {unit(abs(now - before))} ({unit(before)} → {unit(now)})"
+
+
+def progress_facts(conn, workout_id: int) -> tuple[str, list[str], int] | None:
+    # The day's name, one plain-English fact per exercise whose weight, sets
+    # or reps changed since that person's previous log of it (or that's new),
+    # and how many exercises were logged in total. Unchanged exercises are
+    # left out on purpose: the recap is only about what changed.
     # None if the log doesn't exist.
     workout = conn.execute(
         "SELECT user_id, day_name FROM workouts WHERE id = ?", (workout_id,)
@@ -506,46 +512,38 @@ def progress_facts(conn, workout_id: int) -> tuple[str, list[str]] | None:
 
     facts = []
     for ex in exercises:
-        # Earlier logs of this exercise by the same person, newest first.
-        # Ids only go up, so a smaller id is an earlier log. Filtering on
+        # The previous log of this exercise by the same person. Ids only go
+        # up, so the largest smaller id is the one before. Filtering on
         # user_id keeps one person's history out of another's recap.
-        history = conn.execute(
+        last = conn.execute(
             """SELECT we.sets, we.reps, we.weight
                FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
                WHERE we.exercise_id = ? AND w.user_id = ? AND w.id < ?
-               ORDER BY w.id DESC LIMIT ?""",
-            (ex["exercise_id"], workout["user_id"], workout_id, HISTORY_LENGTH),
-        ).fetchall()
+               ORDER BY w.id DESC LIMIT 1""",
+            (ex["exercise_id"], workout["user_id"], workout_id),
+        ).fetchone()
 
         name = ex["exercise_name"]
-        now = f"{ex['sets']} x {ex['reps']} at {kg(ex['weight'])}"
-        if not history:
-            fact = f"{name}: {now}, first time logged."
+        if last is None:
+            fact = f"{name}: new exercise, {ex['sets']} x {ex['reps']} at {kg(ex['weight'])}."
         else:
-            last = history[0]
-            change = ex["weight"] - last["weight"]
-            if change > 0:
-                fact = f"{name}: {now}, up {kg(change)} from last time."
-            elif change < 0:
-                fact = f"{name}: {now}, down {kg(-change)} from last time."
-            else:
-                # How many sessions in a row, today included, used this weight.
-                same = 1
-                for earlier in history:
-                    if earlier["weight"] != ex["weight"]:
-                        break
-                    same += 1
-                # With only HISTORY_LENGTH earlier logs looked at, a full run
-                # could be longer than we can see.
-                at_least = "at least " if same > HISTORY_LENGTH else ""
-                fact = f"{name}: {now}, same weight for {at_least}{same} sessions in a row."
-            if (ex["sets"], ex["reps"]) != (last["sets"], last["reps"]):
-                fact += f" Last time was {last['sets']} x {last['reps']}."
+            changes = [
+                change
+                for change in (
+                    describe_change("weight", last["weight"], ex["weight"], kg),
+                    describe_change("sets", last["sets"], ex["sets"]),
+                    describe_change("reps", last["reps"], ex["reps"]),
+                )
+                if change
+            ]
+            if not changes:
+                continue
+            fact = f"{name}: " + "; ".join(changes) + "."
         if ex["note"]:
             fact += f' Note: "{ex["note"]}"'
         facts.append(fact)
 
-    return workout["day_name"], facts
+    return workout["day_name"], facts, len(exercises)
 
 
 def save_recap(conn, workout_id: int, text: str) -> None:

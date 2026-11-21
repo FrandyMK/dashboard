@@ -246,27 +246,47 @@ body {
   font: inherit;
 }
 
-/* The LLM recap of the last session: quieter than the day cards below it. */
+/* The LLM recap of the last session: a folded <details>, quieter than the
+   day cards below it. Only the header shows until it's tapped. */
 .recap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
   margin: 0.5rem 0 0.75rem;
-  padding: 0.75rem 1rem;
   border-left: 3px solid #3b4261;
   border-radius: 6px;
   background: color-mix(in srgb, var(--tile-bg) 60%, transparent);
 }
 
 .recap-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  cursor: pointer;
+  list-style: none; /* hide the browser's own triangle... */
+}
+
+.recap-label::-webkit-details-marker {
+  display: none; /* ...including Safari's */
+}
+
+/* Our own arrow, which turns when the card opens. */
+.recap-label::before {
+  content: "›";
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.recap[open] .recap-label::before {
+  transform: rotate(90deg);
 }
 
 .recap-text {
+  padding: 0 1rem 0.75rem;
   line-height: 1.45;
 }
 
