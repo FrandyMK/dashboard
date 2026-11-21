@@ -14,9 +14,17 @@ export type WorkoutDay = {
   exercises: Exercise[];
 };
 
+// A short summary of one logged workout, written by the local LLM.
+export type Recap = {
+  dayName: string;
+  completedAt: string; // ISO date-time, UTC
+  text: string;
+};
+
 export type GymPlan = {
   days: WorkoutDay[];
   nextDayIndex: number;
+  lastRecap: Recap | null;
 };
 
 export type ExerciseChanges = Partial<Omit<Exercise, "id">>;

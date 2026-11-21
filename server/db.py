@@ -11,6 +11,7 @@ from models import (
     GymPlan,
     MonthBill,
     Payment,
+    Recap,
     User,
     WorkoutDay,
 )
@@ -71,7 +72,8 @@ CREATE TABLE IF NOT EXISTS workouts (
     user_id TEXT NOT NULL,
     day_id TEXT NOT NULL,
     day_name TEXT NOT NULL,
-    completed_at TEXT NOT NULL
+    completed_at TEXT NOT NULL,
+    recap TEXT
 );
 CREATE TABLE IF NOT EXISTS workout_exercises (
     workout_id INTEGER NOT NULL REFERENCES workouts(id),
@@ -147,6 +149,12 @@ def migrate(conn):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(exercises)")}
     if "note" not in columns:
         conn.execute("ALTER TABLE exercises ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+
+    # The LLM-written recap of a logged workout. NULL until it's written,
+    # and stays NULL if the model was unavailable.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(workouts)")}
+    if "recap" not in columns:
+        conn.execute("ALTER TABLE workouts ADD COLUMN recap TEXT")
 
     # The first month a bill exists in, so earlier months don't list it as unpaid.
     # Existing bills start in the first month they were paid, or else this month.
@@ -264,6 +272,7 @@ def load_plan(conn, user_id: str) -> GymPlan:
     next_day_index = get_next_index(conn, user_id)
     return GymPlan(
         next_day_index=next_day_index % len(days) if days else 0,
+        last_recap=load_last_recap(conn, user_id),
         days=[
             WorkoutDay(
                 id=d["id"],
@@ -426,7 +435,7 @@ def reorder_days(conn, user_id: str, new_order: list[str]) -> bool:
     return True
 
 
-def log_workout(conn, day_id: str) -> None:
+def log_workout(conn, day_id: str) -> int:
     # A snapshot of what was done today. Later changes to the plan
     # (weights, names, deleting an exercise) never rewrite these rows.
     # The user and the day's name are copied from the day itself.
@@ -443,26 +452,117 @@ def log_workout(conn, day_id: str) -> None:
            WHERE day_id = ? AND active = 1""",
         (cursor.lastrowid, day_id),
     )
+    return cursor.lastrowid
 
 
-def complete_workout(conn, user_id: str, day_id: str | None = None) -> bool:
+def complete_workout(conn, user_id: str, day_id: str | None = None) -> int | None:
     # Logs the given day (or, without one, the next day in the rotation)
-    # and makes the day after it the next one. False if the day doesn't exist
-    # or belongs to someone else.
+    # and makes the day after it the next one. Returns the new log's id, or
+    # None if the day doesn't exist or belongs to someone else.
     days = day_ids(conn, user_id)
     if not days:
-        return False
+        return None
 
     if day_id is None:
         current = get_next_index(conn, user_id) % len(days)
     elif day_id in days:
         current = days.index(day_id)
     else:
-        return False
+        return None
 
-    log_workout(conn, days[current])
+    workout_id = log_workout(conn, days[current])
     set_next_index(conn, user_id, (current + 1) % len(days))
-    return True
+    return workout_id
+
+
+# --- Workout recap ---
+# The numbers are worked out here, in code. The LLM (recap.py) only turns
+# these facts into a sentence or two, because small models get arithmetic wrong.
+
+# How many earlier sessions of an exercise to compare with.
+HISTORY_LENGTH = 4
+
+
+def kg(weight: float) -> str:
+    # 82.5 -> "82.5 kg", 80.0 -> "80 kg"
+    return f"{weight:g} kg"
+
+
+def progress_facts(conn, workout_id: int) -> tuple[str, list[str]] | None:
+    # The day's name, and one plain-English fact per exercise in this log
+    # comparing it with that person's earlier logs of the same exercise.
+    # None if the log doesn't exist.
+    workout = conn.execute(
+        "SELECT user_id, day_name FROM workouts WHERE id = ?", (workout_id,)
+    ).fetchone()
+    if workout is None:
+        return None
+
+    exercises = conn.execute(
+        """SELECT exercise_id, exercise_name, sets, reps, weight, note
+           FROM workout_exercises WHERE workout_id = ? ORDER BY position""",
+        (workout_id,),
+    ).fetchall()
+
+    facts = []
+    for ex in exercises:
+        # Earlier logs of this exercise by the same person, newest first.
+        # Ids only go up, so a smaller id is an earlier log. Filtering on
+        # user_id keeps one person's history out of another's recap.
+        history = conn.execute(
+            """SELECT we.sets, we.reps, we.weight
+               FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+               WHERE we.exercise_id = ? AND w.user_id = ? AND w.id < ?
+               ORDER BY w.id DESC LIMIT ?""",
+            (ex["exercise_id"], workout["user_id"], workout_id, HISTORY_LENGTH),
+        ).fetchall()
+
+        name = ex["exercise_name"]
+        now = f"{ex['sets']} x {ex['reps']} at {kg(ex['weight'])}"
+        if not history:
+            fact = f"{name}: {now}, first time logged."
+        else:
+            last = history[0]
+            change = ex["weight"] - last["weight"]
+            if change > 0:
+                fact = f"{name}: {now}, up {kg(change)} from last time."
+            elif change < 0:
+                fact = f"{name}: {now}, down {kg(-change)} from last time."
+            else:
+                # How many sessions in a row, today included, used this weight.
+                same = 1
+                for earlier in history:
+                    if earlier["weight"] != ex["weight"]:
+                        break
+                    same += 1
+                # With only HISTORY_LENGTH earlier logs looked at, a full run
+                # could be longer than we can see.
+                at_least = "at least " if same > HISTORY_LENGTH else ""
+                fact = f"{name}: {now}, same weight for {at_least}{same} sessions in a row."
+            if (ex["sets"], ex["reps"]) != (last["sets"], last["reps"]):
+                fact += f" Last time was {last['sets']} x {last['reps']}."
+        if ex["note"]:
+            fact += f' Note: "{ex["note"]}"'
+        facts.append(fact)
+
+    return workout["day_name"], facts
+
+
+def save_recap(conn, workout_id: int, text: str) -> None:
+    conn.execute("UPDATE workouts SET recap = ? WHERE id = ?", (text, workout_id))
+
+
+def load_last_recap(conn, user_id: str) -> Recap | None:
+    # The newest of this person's logs that has a recap.
+    row = conn.execute(
+        """SELECT day_name, completed_at, recap FROM workouts
+           WHERE user_id = ? AND recap IS NOT NULL
+           ORDER BY id DESC LIMIT 1""",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return Recap(day_name=row["day_name"], completed_at=row["completed_at"], text=row["recap"])
 
 
 # --- Finance ---

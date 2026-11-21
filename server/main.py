@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     FastAPI,
     HTTPException,
@@ -50,6 +51,7 @@ from models import (
     NewExercise,
     User,
 )
+from recap import write_recap
 
 
 @asynccontextmanager
@@ -197,12 +199,22 @@ def put_order(user: CurrentUser, day_id: str, order: ExerciseOrder) -> GymPlan:
 
 
 @app.post("/gym/complete")
-def post_complete(user: CurrentUser, completed: CompletedWorkout | None = None) -> GymPlan:
+def post_complete(
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    completed: CompletedWorkout | None = None,
+) -> GymPlan:
     with connect() as conn:
         day_id = completed.day_id if completed else None
-        if not complete_workout(conn, user.id, day_id):
+        workout_id = complete_workout(conn, user.id, day_id)
+        if workout_id is None:
             raise HTTPException(status_code=404, detail="Day not found")
-        return load_plan(conn, user.id)
+        plan = load_plan(conn, user.id)
+    # Runs after the response has been sent, and after the log above is
+    # committed, so the slow local model never makes "Complete workout" wait.
+    # The recap shows up on the dashboard's next refresh.
+    background_tasks.add_task(write_recap, workout_id)
+    return plan
 
 
 # --- Finance ---

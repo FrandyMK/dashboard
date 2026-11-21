@@ -22,6 +22,7 @@ One React codebase runs in both places, talking to one small FastAPI + SQLite se
 - Sets, reps and weight are editable in place, and each exercise has a one-line note ("keep a straight back next time").
 - Reorder exercises, add new ones to the pool, and delete pool exercises (two clicks, so nothing disappears by accident).
 - "Complete workout" saves a log of that session (each exercise's sets, reps, weight and note, with the date), makes the day after it the next one, and goes back to the list of days. Changing a weight later never rewrites past sessions, so the long-term progression is kept.
+- A short recap of the last session sits above the days, written by a local LLM on the home server: "Squat has been at 120 kg for five sessions in a row." It compares each exercise with my earlier sessions and appears within a minute of completing.
 - On the phone, each exercise is a collapsed card showing its name, a short "3 × 8 · 80 kg" summary and the move buttons. Tapping the name slides it open to edit the sets, reps, weight and note.
 
 **Monthly bills**
@@ -48,7 +49,8 @@ Desktop (Tauri app, workspace 5) ──┐
 My phone (browser, home screen) ───┼──► tailscale serve ──► FastAPI ──► SQLite
 Her phone (browser, home screen) ──┘    (HTTPS, adds      (Docker, only on
                                          who is asking)    127.0.0.1)
-                                                                  │
+                                                         │        │
+                                     Ollama (local LLM) ◄┘        │
                                               nightly backup ──► pulled to my PC
 ```
 
@@ -56,6 +58,7 @@ Her phone (browser, home screen) ──┘    (HTTPS, adds      (Docker, only on
 - **Desktop:** a [Tauri v2](https://v2.tauri.app) window, far lighter than Electron for an app that's always open. A Hyprland window rule pins it to workspace 5.
 - **Phone:** the API container also serves the built frontend, so the phone just opens `https://homelab1.<tailnet>.ts.net`.
 - **Backend:** FastAPI, Pydantic and plain `sqlite3`, managed with [uv](https://docs.astral.sh/uv/), running in Docker on an Ubuntu home server.
+- **LLM:** [Ollama](https://ollama.com) in its own container on the same server, running `qwen3:4b-instruct` on the CPU. The API calls it over HTTP; nothing leaves the house.
 - **Network:** every device is on my [Tailscale](https://tailscale.com) tailnet. The API container only listens on `127.0.0.1`; [`tailscale serve`](https://tailscale.com/kb/1312/serve) is the only way in, and adds HTTPS and the identity of whoever is asking. An access rule lets other people's devices reach the dashboard and nothing else on my tailnet.
 
 The server is the single source of truth. The frontend never decides what the data looks like: it asks for a change, and whatever the server returns is what gets shown.
@@ -76,6 +79,8 @@ server/
 ├── main.py             FastAPI app: routes, CORS, serves the built frontend
 ├── db.py               Schema, migrations, seed data, queries
 ├── models.py           Pydantic models
+├── llm.py              One small function that asks the local LLM
+├── recap.py            Writes the workout recap in the background
 ├── backup.py           Safe database snapshot
 ├── add_user.py         Add a person, with empty Push / Pull / Leg days
 ├── Dockerfile          Node builds the frontend, Python serves everything
@@ -127,6 +132,10 @@ server/
 **Who gets what is decided by the server.** Finance routes sit on their own `APIRouter` with a dependency that answers 403 for anyone but me, so a finance route added later can't forget the check. The frontend asks `/me` first and leaves out the tiles someone can't use, but that's only to keep their screen clean; the server would refuse anyway. 401 means "I don't know who you are", 403 means "I know, and you're not allowed".
 
 **Per-person data through the day.** Training days have a `user_id`; exercises don't need one, because they belong to whoever owns their day. Every gym function takes the user's id and checks the day first, so guessing someone else's day id gets a 404. The "next day" moved from a global setting to each user's row. A new person starts with empty Push / Pull / Leg days to fill in themselves (new exercises start at 0 kg), so nobody starts out with someone else's numbers. Their days get random ids rather than readable ones like `push`, because day ids are unique across everyone and the workout log looks exercises up by id. The migration gave every existing day and logged workout to me, and my login comes from `server/.env` (refreshed on every start), so it isn't in this public repo.
+
+**Numbers in code, words from the LLM.** The workout recap comes from a 4-billion-parameter model running on the home server's CPU. Small models get arithmetic and facts wrong, so the model never sees the raw log: `progress_facts()` in `db.py` compares each exercise with that person's last four sessions and writes plain facts ("Squat: 2 x 5 at 120 kg, same weight for at least 5 sessions in a row"), and the model only turns them into a sentence or two. A low temperature and a prompt that forbids new numbers keep it close to those facts. The history query filters on the person's id, so nobody's recap is built from someone else's training.
+
+**The LLM never makes anyone wait.** On this CPU the model writes about 10 words a second and needs up to 15 seconds to load, so a recap takes around 15 seconds. "Complete workout" returns at once and hands the recap to a FastAPI background task, which saves it on the workout's log when it's done. The existing refresh (on focus and every minute) picks it up, so there's no extra polling or streaming. If the model is down, the request fails quietly and the log simply has no recap; nothing else depends on it. Because everything runs locally, my training data and (in future features) my finances never go to a cloud API.
 
 **Safe SQL.** Every value goes through `?` placeholders. The one dynamic part, the `SET` clause for partial updates, only accepts column names from a fixed whitelist.
 
@@ -230,7 +239,7 @@ These are known and deliberate for now:
 - **No offline support.** The phone needs a connection, and requests have no timeout yet, so with bad signal one hanging change holds up the ones after it.
 - **Backups stay in the house** (server and PC). Off-site backup is still to do.
 - **Marking a bill paid always records its current amount**, which doesn't suit bills that vary month to month. A bill's start month also can't be changed in the app.
-- **Workout history is stored but not shown yet.** Every completed session is logged, but the app doesn't read the log back yet, so there's no progression graph in the app. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
+- **Workout history is mostly not shown yet.** Every completed session is logged, and the recap compares the latest one with earlier sessions, but there's no progression graph in the app yet. The data can be analysed straight from a database snapshot. Pressing "Complete workout" without training also logs a session, and there's no way to remove one from the app.
 
 ## Roadmap
 
@@ -246,6 +255,7 @@ These are known and deliberate for now:
 - [x] Gym: add, delete and reorder training days
 - [x] Gym: rename training days and exercises
 - [x] Share the gym tile: one plan per person, identity from Tailscale
+- [x] Gym: LLM-written recap of the last session, from a local model
 - [ ] Finance: custom amount when marking paid
 - [ ] Progression graphs in the gym tile
 - [ ] Offline support for the phone, queuing changes until there's signal

@@ -12,6 +12,7 @@ import {
   type Exercise,
   type ExerciseChanges,
   type GymPlan,
+  type Recap,
   type WorkoutDay,
 } from "./data";
 
@@ -424,6 +425,25 @@ function DayView({ day, onChange, onBack }: DayProps) {
   );
 }
 
+// The local model's short recap of the last logged workout, shown above the
+// days. It's written in the background after "Complete workout", so it
+// appears on the next refresh (on focus, or within a minute).
+function RecapCard({ recap }: { recap: Recap }) {
+  const when = new Date(recap.completedAt).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  return (
+    <section className="recap">
+      <span className="recap-label">
+        Last session · {recap.dayName} · {when}
+      </span>
+      <p className="recap-text">{recap.text}</p>
+    </section>
+  );
+}
+
 // The first screen of the gym tile: every day in the rotation.
 // Tapping one opens it; the next day in the rotation is marked.
 export default function GymView({ plan, onChange }: Props) {
@@ -478,6 +498,7 @@ export default function GymView({ plan, onChange }: Props) {
   return (
     <div className="gym">
       {error && <p className="error">{error}</p>}
+      {plan.lastRecap && <RecapCard recap={plan.lastRecap} />}
       <ul className="day-list">
         {plan.days.map((d, i) => {
           const active = d.exercises.filter((ex) => ex.active).length;

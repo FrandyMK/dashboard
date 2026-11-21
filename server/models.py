@@ -24,9 +24,17 @@ class WorkoutDay(CamelModel):
     exercises: list[Exercise]
 
 
+class Recap(CamelModel):
+    # A short LLM-written summary of one logged workout.
+    day_name: str
+    completed_at: str
+    text: str
+
+
 class GymPlan(CamelModel):
     days: list[WorkoutDay]
     next_day_index: int
+    last_recap: Recap | None = None
 
 
 class ExerciseUpdate(CamelModel):

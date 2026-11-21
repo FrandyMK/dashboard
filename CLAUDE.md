@@ -36,7 +36,7 @@ All are connected via **Tailscale** (this file is public, so the tailnet name is
 
 ## What exists now
 
-A personal tile dashboard. Each tile shows a summary and opens into a small app when clicked. **The gym and finance tiles are fully working; to-do and habits tiles are placeholders.** It has **several users**: my girlfriend uses the gym tile with her own plan. Identity comes from Tailscale logins; finance is mine only.
+A personal tile dashboard. Each tile shows a summary and opens into a small app when clicked. **The gym and finance tiles are fully working; to-do and habits tiles are placeholders.** It has **several users**: my girlfriend uses the gym tile with her own plan. Identity comes from Tailscale logins; finance is mine only. The gym tile shows an **LLM-written recap of the last session**, from a local model (Ollama) on the homelab.
 
 It runs in two places from one React codebase:
 - **Desktop:** a Tauri app pinned to Hyprland workspace 5.
@@ -49,8 +49,11 @@ Desktop (Tauri app, workspace 5) ──┐
 My phone (browser, home screen) ───┼──► tailscale serve ──► FastAPI on 127.0.0.1:8010 ──► SQLite (server/data/dashboard.db)
 Her phone (browser, home screen) ──┘    (HTTPS; adds          (Docker)
                                          Tailscale-User-Login)        │
+                                                                      ├─ background task ──► Ollama (host.docker.internal:11434)
                                                                       └─ nightly backup ──► pulled to PC
 ```
+
+**Ollama** is not part of this repo: it's a separate Portainer stack on the homelab (`ollama/ollama`, port 11434, volume `ollama_ollama_data`, `OLLAMA_MAX_LOADED_MODELS=1` because the homelab only has 8 GB RAM). Model: `qwen3:4b-instruct-8k`, a copy of `qwen3:4b-instruct` with `num_ctx 8192`. Use instruct models, not the thinking `qwen3:4b`: that one reasons for minutes on this CPU. Speed: about 10 tokens/s out, about 47 tokens/s reading the prompt, up to 15 s to load. Keep prompts short. Open WebUI (port 3000) and n8n (port 5678) use the same Ollama.
 
 Future direction (2026-11-18): maybe more friends later, a more interactive gym part, maybe a separate gym app. That's why identity sits in one swappable function (`current_user()` in `main.py`): real logins (passkeys/OAuth) for people without Tailscale would only replace that.
 
@@ -162,11 +165,12 @@ dashboard/
 - Path from env var `DASHBOARD_DB`, defaulting to `dashboard.db`. In Docker: `/data/dashboard.db`.
 - `connect()` is a context manager: commits on success, rolls back on any exception, always closes.
 - `init_db()` runs on startup through FastAPI's `lifespan`: creates tables if missing, runs `migrate()`, and gives the owner a starter plan with the example exercises (`seed_plan(..., with_exercises=True)`) if they have no days, i.e. only in a brand-new database.
-- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` first calls `ensure_owner`, then checks `PRAGMA table_info(...)` and adds what's missing: `user_id` on `workout_days` and `workouts` (added with `DEFAULT ''`, then every existing row set to `OWNER_ID`), `exercises.note`, and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
+- `migrate(conn)`: `CREATE TABLE IF NOT EXISTS` skips existing tables, so new columns never reach an existing database through `SCHEMA`. `migrate` first calls `ensure_owner`, then checks `PRAGMA table_info(...)` and adds what's missing: `user_id` on `workout_days` and `workouts` (added with `DEFAULT ''`, then every existing row set to `OWNER_ID`), `exercises.note`, `workouts.recap` (nullable TEXT), and `bills.start_period` (added with `DEFAULT ''`, then backfilled once with each bill's earliest payment period, or the current UTC month for bills never paid). Safe on every startup. Future columns on existing tables need the same treatment.
 - `OWNER_ID = "owner"`: the user who owned everything before users existed. `ensure_owner(conn)` runs on every startup: it upserts that row with `tailscale_login` from env `DASHBOARD_OWNER_LOGIN` (default `owner@localhost`) and `name` from `DASHBOARD_OWNER_NAME` (default `Owner`), `can_finance = 1`. Only the first insert copies `next_day_index` from `settings`; later startups only refresh name and login, so a wrong login is fixed by editing `.env` and restarting.
 - `find_user(conn, login)` → `User | None` (login match is `COLLATE NOCASE`).
 - `seed_plan(conn, user_id, with_exercises=False)`: the `SEED` days (Push / Pull / Leg) with fresh `uuid4().hex` ids (not the readable `push`/`bench` ids, because `workout_days.id` is unique across users and the workout log indexes on `exercise_id`), and `next_day_index = 0`. By default the days are **empty**, which is what `add_user.py` gives new people (exercises they add start at 0 kg via `add_exercise`). `with_exercises=True` also adds the `SEED` example exercises (my original weights); only used for the owner of a brand-new database, so a fresh install has something to show.
 - Gym helpers: `day_ids(conn, user_id)` (ordered), `owns_day(conn, user_id, day_id)`, `get_next_index` / `set_next_index` (on `users`). `rename_day(conn, user_id, day_id, name)` checks ownership in its `WHERE`. Every gym function takes `user_id` first. Exercise functions check `owns_day` before anything else, so another person's day id gives `False` → 404 (400 for `reorder_exercises`). Exercises have no `user_id`: they belong to whoever owns their day.
+- Workout recap: `complete_workout` returns the new log's id (`int | None`; `None` → 404), and `post_complete` adds `recap.write_recap(workout_id)` as a FastAPI `BackgroundTask`, so it runs after the response is sent. `progress_facts(conn, workout_id)` builds one fact string per logged exercise by comparing it with the same person's last `HISTORY_LENGTH = 4` logs of that `exercise_id` (`w.id < ?`, filtered on `user_id`): first time / up or down X kg / same weight N sessions in a row (+ sets×reps change, + note). `recap.py` sends those facts to `llm.generate()` with a system prompt that forbids inventing numbers, and `save_recap` stores the answer. `load_plan` includes `last_recap` (newest of this user's logs with a recap), shown by `RecapCard` above the day list. `llm.py` posts to `{OLLAMA_URL}/api/chat` (env, set in `docker-compose.yml` with `extra_hosts: host.docker.internal:host-gateway`), temperature 0.3, `num_predict` 120, 180 s timeout, and returns `None` on any error, so a dead Ollama only means no recap.
 - The note is `''` when empty, never `NULL`: clearing a note sends `""`, which survives the PATCH route's `exclude_none=True` (a `None` would mean "not changing this field").
 - Tables:
   - `users (id, name, tailscale_login UNIQUE COLLATE NOCASE, can_finance, next_day_index)`. My row is `id = 'owner'`; others get a `uuid4().hex` id from `add_user.py`.
@@ -286,7 +290,8 @@ hl.window_rule({
 6. PWA / offline support for the phone, queuing changes when there's no signal at the gym
 7. Follow the active Omarchy theme colours automatically
 8. More people: other friends with their own screen; maybe a more interactive gym tile, or a separate gym app (would need real logins instead of Tailscale identity)
-9. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to
+9. Parked idea: a tile showing growing open-source GitHub repos, with LLM-written plain-language summaries of each, so I can find projects to follow or contribute to. `llm.generate()` is ready to reuse; run it as a nightly batch job, not per request
+10. More local-LLM ideas from the 2026-11-21 brainstorm: quick-log a set by text or voice ("bench 3x8 82.5" → JSON with Ollama's `format`), natural-language add for bills and to-dos, a cached morning-briefing tile, and a homelab health tile. Same rules: numbers in code, background + cache, short prompts
 
 ## Next step: finish the sharing loose ends, then README screenshots
 
@@ -305,6 +310,10 @@ After that: the to-do tile (roadmap item 2).
 ## Session log
 
 (newest first)
+
+**2026-11-21 (workout recap, local LLM)**
+- After "Complete workout", a background task asks the local model (Ollama, `qwen3:4b-instruct-8k`) to turn computed progress facts into a 1–2 sentence recap, stored in `workouts.recap` and shown above the days as "Last session · Leg day · Thu 19 Nov". New `server/llm.py` and `server/recap.py`; `httpx` is now an explicit dependency. Branch `workout-recap`, written by Claude and reviewed with me.
+- Tested on the homelab without logging fake sessions: facts and recap for my real log #24 (about 15 s), `/gym/plan` returns my recap and `null` for her login, and an unreachable Ollama only logs a warning. The homelab container was rebuilt from this branch, which also deployed the 2026-11-20 rename feature. The desktop app needs rebuilding on the PC to show the card.
 
 **2026-11-20**
 - Days and exercises can be renamed: ✎ next to an opened day's name, and ✎ in an exercise's unfolded card (always visible in the desktop row). Backend: `PATCH /gym/days/{day_id}` with `rename_day` (the `user_id` in the `WHERE` is the ownership check); exercises already accepted `name` via PATCH, which now also trims it and rejects whitespace-only with 422 (`403754d`). Frontend: shared `NameInput` (`a040ecf`). Tested with TestClient on a copy of the PC database (rename, 422, 404, another user's day 404) and in headless Chromium at desktop and phone width. Past workouts keep their old names, since the log copies them. Not yet deployed on the homelab.

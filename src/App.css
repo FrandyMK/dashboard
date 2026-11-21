@@ -246,6 +246,30 @@ body {
   font: inherit;
 }
 
+/* The LLM recap of the last session: quieter than the day cards below it. */
+.recap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid #3b4261;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tile-bg) 60%, transparent);
+}
+
+.recap-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.recap-text {
+  line-height: 1.45;
+}
+
 .day-list {
   list-style: none;
   padding: 0;
